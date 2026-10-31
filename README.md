@@ -6,7 +6,7 @@ It runs [LFM3-Omni-2B](https://huggingface.co/LiquidAI/LFM3-Omni-2B) through [ll
 
 ## Install
 
-Download the build for your platform from [Releases](https://github.com/yepher/docent/releases): `.dmg` for macOS, `.exe` for Windows, `.AppImage` or `.deb` for Linux. The app updates itself from new releases, except the `.deb`, which you update by installing the newer package.
+Download the build for your platform from [Releases](https://github.com/yepher/docent-app/releases): `.dmg` for macOS, `.exe` for Windows, `.AppImage` or `.deb` for Linux. The app updates itself from new releases, except the `.deb`, which you update by installing the newer package.
 
 On first run it downloads about 1.7 GB of models and verifies them. You need about 2 GB of free disk space and, as a guide, 8 GB of memory.
 
