@@ -24,11 +24,19 @@ export interface SpeechPart {
   spoken: string;
 }
 
-const SENTENCE_END = /[.!?。！？]["')\]]*(?:\s*\[\d+(?:\s*,\s*\d+)*\])*\s+|\n+/;
+// A marker only joins the sentence before it on the same line. One on a new line opens a reference.
+const SENTENCE_END = /[.!?。！？]["')\]]*(?:[ \t]*\[\d+(?:\s*,\s*\d+)*\])*\s+|\n+/;
+const REFERENCE_LINE = /^[\s>*_•-]*\[\d+(?:\s*,\s*\d+)*\]/;
+const SOURCES_HEADING = /^[^\p{L}]*(?:sources?|references?|citations?)[^\p{L}]*$/iu;
 
-/** Cuts streamed answer text into sentences that can be shown and spoken together. */
+/**
+ * Cuts streamed answer text into sentences that can be shown and spoken together. Models often
+ * end with their own list of sources, so those lines are shown but never spoken.
+ */
 export class SentenceSplitter {
   private buffer = '';
+  private atLineStart = true;
+  private inReference = false;
 
   push(delta: string): SpeechPart[] {
     this.buffer += delta;
@@ -37,7 +45,7 @@ export class SentenceSplitter {
       const match = SENTENCE_END.exec(this.buffer);
       if (!match) return parts;
       const end = match.index + match[0].length;
-      parts.push(part(this.buffer.slice(0, end)));
+      parts.push(this.part(this.buffer.slice(0, end)));
       this.buffer = this.buffer.slice(end);
     }
   }
@@ -45,12 +53,17 @@ export class SentenceSplitter {
   flush(): SpeechPart[] {
     const rest = this.buffer;
     this.buffer = '';
-    return rest ? [part(rest)] : [];
+    return rest ? [this.part(rest)] : [];
   }
-}
 
-function part(raw: string): SpeechPart {
-  return { raw, spoken: speakable(raw.replace(MARKER, '')) };
+  private part(raw: string): SpeechPart {
+    const reference =
+      this.inReference || (this.atLineStart && (REFERENCE_LINE.test(raw) || SOURCES_HEADING.test(raw)));
+    this.atLineStart = raw.endsWith('\n');
+    // A reference can hold a full stop ("Smith et al. 2017"), so it runs to the end of its line.
+    this.inReference = reference && !this.atLineStart;
+    return { raw, spoken: reference ? '' : speakable(raw.replace(MARKER, '')) };
+  }
 }
 
 function speakable(text: string): string {

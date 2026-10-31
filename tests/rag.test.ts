@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NO_MATCH, runTurn } from '../src/main/agent';
-import { SentenceSplitter, resolveCitations } from '../src/main/citations';
+import { SentenceSplitter, type SpeechPart, resolveCitations } from '../src/main/citations';
 import { CHUNK_CHARS, chunkSegments } from '../src/main/ingest/chunk';
 import { indexSet } from '../src/main/ingest';
 import { collectFiles, parseFile } from '../src/main/ingest/parse';
@@ -142,6 +142,33 @@ describe('SentenceSplitter', () => {
     expect(out.map((p) => p.raw).join('')).toBe(text);
     expect(out[0]?.raw).toBe('One. [1] ');
     expect(out.map((p) => p.spoken)).toEqual(['One.', 'Two.', '- item', '']);
+  });
+
+  const spokenFrom = (text: string, size = text.length) => {
+    const s = new SentenceSplitter();
+    const out: SpeechPart[] = [];
+    for (let i = 0; i < text.length; i += size) out.push(...s.push(text.slice(i, i + size)));
+    out.push(...s.flush());
+    expect(out.map((p) => p.raw).join('')).toBe(text);
+    return out.map((p) => p.spoken).filter(Boolean);
+  };
+
+  it.each([1, 3, 1000])('shows but never speaks a source list, in deltas of %i', (size) => {
+    const text = 'It covers attention.\n\n[1] 1706.03762v7.pdf, page 15\n[2] 1706.03762v7.pdf, page 14';
+    expect(spokenFrom(text, size)).toEqual(['It covers attention.']);
+  });
+
+  it('skips source headings, bullets and full stops inside a reference', () => {
+    const text = 'Answer.\n\n**Sources:**\n- [1] Smith et al. Attention, page 3.\n- [2] notes.md, line 4\n';
+    expect(spokenFrom(text)).toEqual(['Answer.']);
+  });
+
+  it('still speaks a sentence that follows a citation on the same line', () => {
+    expect(spokenFrom('One. [1] Two.', 1)).toEqual(['One.', 'Two.']);
+  });
+
+  it('still speaks a line that merely mentions sources', () => {
+    expect(spokenFrom('Answer.\nThe sources disagree.')).toEqual(['Answer.', 'The sources disagree.']);
   });
 });
 
