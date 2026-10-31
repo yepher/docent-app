@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Downloads the pinned llama.cpp build for one platform into vendor/llama/current,
-// verifies its SHA-256, and writes the third-party notices the release must carry.
-// Usage: node scripts/fetch-llama.mjs [platform] [arch]   (defaults to this machine)
+// Downloads pinned llama.cpp builds into vendor/llama/<platform>-<arch>, verifies their SHA-256,
+// and writes the third-party notices the release must carry.
+// Usage: node scripts/fetch-llama.mjs [platform-arch ...]   (defaults to this machine)
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -15,31 +15,7 @@ const ASSETS = {
   'win32-x64': ['win-vulkan-x64.zip', '99afa5556bbc0206ed1d4d0cc7ac56200c5080cc81e4a2f5a08367ae48b33625'],
 };
 
-const key = `${process.argv[2] ?? process.platform}-${process.argv[3] ?? process.arch}`;
-const asset = ASSETS[key];
-if (!asset) throw new Error(`No llama.cpp build pinned for ${key}`);
-const [suffix, sha256] = asset;
-
 const root = resolve(import.meta.dirname, '..');
-const name = `llama-${BUILD}-bin-${suffix}`;
-const work = join(root, 'vendor', 'llama', `.work-${key}`);
-const dest = join(root, 'vendor', 'llama', 'current');
-rmSync(work, { recursive: true, force: true });
-rmSync(dest, { recursive: true, force: true });
-mkdirSync(work, { recursive: true });
-
-console.log(`Fetching ${name}`);
-const res = await fetch(`https://github.com/ggml-org/llama.cpp/releases/download/${BUILD}/${name}`);
-if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-const bytes = Buffer.from(await res.arrayBuffer());
-const actual = createHash('sha256').update(bytes).digest('hex');
-if (actual !== sha256) throw new Error(`SHA-256 mismatch for ${name}: ${actual}`);
-
-const archive = join(work, name);
-writeFileSync(archive, bytes);
-// bsdtar handles .zip on Windows and macOS; on Linux only .tar.gz is ever used.
-execFileSync('tar', ['-xf', archive, '-C', work], { stdio: 'inherit' });
-rmSync(archive);
 
 // Some builds nest everything in one directory; llama-server's folder is the root we want.
 function findServer(dir) {
@@ -53,12 +29,42 @@ function findServer(dir) {
   }
   return null;
 }
-const serverDir = findServer(work);
-if (!serverDir) throw new Error(`llama-server not found in ${name}`);
-// Rename, not cpSync: cp rewrites the relative .dylib/.so symlinks as absolute paths into `work`,
-// which leaves them dangling once `work` is deleted.
-renameSync(serverDir, dest);
-rmSync(work, { recursive: true, force: true });
+
+async function fetchBuild(key) {
+  const asset = ASSETS[key];
+  if (!asset) throw new Error(`No llama.cpp build pinned for ${key}`);
+  const [suffix, sha256] = asset;
+  const name = `llama-${BUILD}-bin-${suffix}`;
+  const work = join(root, 'vendor', 'llama', `.work-${key}`);
+  const dest = join(root, 'vendor', 'llama', key);
+  rmSync(work, { recursive: true, force: true });
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(work, { recursive: true });
+
+  console.log(`Fetching ${name}`);
+  const res = await fetch(`https://github.com/ggml-org/llama.cpp/releases/download/${BUILD}/${name}`);
+  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+  const bytes = Buffer.from(await res.arrayBuffer());
+  const actual = createHash('sha256').update(bytes).digest('hex');
+  if (actual !== sha256) throw new Error(`SHA-256 mismatch for ${name}: ${actual}`);
+
+  const archive = join(work, name);
+  writeFileSync(archive, bytes);
+  // bsdtar handles .zip on Windows and macOS; on Linux only .tar.gz is ever used.
+  execFileSync('tar', ['-xf', archive, '-C', work], { stdio: 'inherit' });
+  rmSync(archive);
+
+  const serverDir = findServer(work);
+  if (!serverDir) throw new Error(`llama-server not found in ${name}`);
+  // Rename, not cpSync: cp rewrites the relative .dylib/.so symlinks as absolute paths into `work`,
+  // which leaves them dangling once `work` is deleted.
+  renameSync(serverDir, dest);
+  rmSync(work, { recursive: true, force: true });
+  console.log(`Installed llama.cpp ${BUILD} in ${dest}`);
+}
+
+const keys = process.argv.slice(2);
+for (const key of keys.length > 0 ? keys : [`${process.platform}-${process.arch}`]) await fetchBuild(key);
 
 writeFileSync(
   join(root, 'vendor', 'THIRD_PARTY_NOTICES.md'),
@@ -74,4 +80,3 @@ Downloaded on first run, not included in the app:
   https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF
 `,
 );
-console.log(`Installed llama.cpp ${BUILD} for ${key} in ${dest}`);

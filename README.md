@@ -41,7 +41,7 @@ Requires Node 22.13 or newer.
 
 ```sh
 npm install
-npm run fetch:llama    # pinned llama-server for this platform
+npm run fetch:llama    # pinned llama-server for this machine
 npm run dev
 npm test
 ```
@@ -70,7 +70,7 @@ DOCENT_LLAMA_BIN="$PWD/tests/fake-llama-server.mjs" npm run dev
 1. Bump `version` in `package.json`.
 2. Tag and push: `git tag v0.2.0 && git push --tags`.
 
-`.github/workflows/release.yml` builds each platform and publishes the release.
+`.github/workflows/release.yml` builds each platform into a draft release and publishes it once all of them succeed. Edit `.github/release-notes.md` first; it becomes the release text.
 
 macOS only applies updates to signed apps, so macOS auto-update needs an Apple Developer ID. Add these repository secrets: `MAC_CERTIFICATE_P12_BASE64`, `MAC_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`. Without them the macOS build is unsigned, and users must update by hand. Unsigned Windows builds update normally but show a SmartScreen warning on first install.
 

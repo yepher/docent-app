@@ -24,7 +24,7 @@ const modelsDir = () => join(app.getPath('userData'), 'models');
 
 function llamaBinary(): string {
   if (fakeBinary) return fakeBinary;
-  const root = app.isPackaged ? join(process.resourcesPath, 'llama') : join(app.getAppPath(), 'vendor', 'llama', 'current');
+  const root = app.isPackaged ? join(process.resourcesPath, 'llama') : join(app.getAppPath(), 'vendor', 'llama', `${process.platform}-${process.arch}`);
   return join(root, process.platform === 'win32' ? 'llama-server.exe' : 'llama-server');
 }
 

@@ -7,9 +7,9 @@ directories:
 files:
   - out/**
   - package.json
-# The sidecar for the platform being built. scripts/fetch-llama.mjs fills this.
+# The sidecar matching each build. scripts/fetch-llama.mjs fills these folders.
 extraResources:
-  - from: vendor/llama/current
+  - from: vendor/llama/${platform}-${arch}
     to: llama
     filter: ['**/*']
   - from: vendor/THIRD_PARTY_NOTICES.md
@@ -20,22 +20,23 @@ publish:
   repo: docent-app
 mac:
   category: public.app-category.productivity
+  # No arch lists on targets: they override --arm64/--x64 on the command line.
   target:
-    - { target: dmg, arch: [arm64, x64] }
-    - { target: zip, arch: [arm64, x64] } # electron-updater needs the zip on macOS
+    - dmg
+    - zip # electron-updater needs the zip on macOS
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSMicrophoneUsageDescription: Docent uses the microphone for voice questions. Audio is processed on this computer.
 win:
-  target: [{ target: nsis, arch: [x64] }]
+  target: [nsis]
 nsis:
   oneClick: true
   perMachine: false
 linux:
   category: Utility
   target:
-    - { target: AppImage, arch: [x64] } # AppImage is the auto-updating Linux format
-    - { target: deb, arch: [x64] }
+    - AppImage # the auto-updating Linux format
+    - deb
   maintainer: Docent contributors <claude@yepher.com>

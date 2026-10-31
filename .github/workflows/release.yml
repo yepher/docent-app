@@ -7,16 +7,25 @@ on:
 permissions:
   contents: write
 jobs:
+  # The draft exists first, so parallel builds cannot each create their own release.
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Docent ${GITHUB_REF_NAME#v}" --notes-file .github/release-notes.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   build:
+    needs: draft
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-latest, platform: darwin, arch: arm64, flags: --mac --arm64 }
-          - { os: macos-13, platform: darwin, arch: x64, flags: --mac --x64 }
-          - { os: windows-latest, platform: win32, arch: x64, flags: --win --x64 }
-          - { os: ubuntu-22.04, platform: linux, arch: x64, flags: --linux --x64 }
+          # Both Mac builds run together: they share latest-mac.yml, which a second job would overwrite.
+          - { os: macos-latest, llama: darwin-arm64 darwin-x64, flags: --mac --arm64 --x64 }
+          - { os: windows-latest, llama: win32-x64, flags: --win --x64 }
+          - { os: ubuntu-22.04, llama: linux-x64, flags: --linux --x64 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,7 +33,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - run: node scripts/fetch-llama.mjs ${{ matrix.platform }} ${{ matrix.arch }}
+      - run: node scripts/fetch-llama.mjs ${{ matrix.llama }}
       - run: npx electron-builder ${{ matrix.flags }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -34,3 +43,11 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+  # Testers only see a release once every platform has built.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
