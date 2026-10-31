@@ -38,7 +38,10 @@ const api: Api = {
     remove: (word) => ipcRenderer.invoke('pronunciations:remove', word),
     preview: (spoken) => ipcRenderer.invoke('pronunciations:preview', spoken),
   },
-  docs: { open: (id) => ipcRenderer.invoke('docs:open', id) },
+  docs: {
+    open: (id) => ipcRenderer.invoke('docs:open', id),
+    pdf: (id) => ipcRenderer.invoke('docs:pdf', id),
+  },
   update: {
     onState: (cb) => subscribe('update:state', cb),
     install: () => ipcRenderer.invoke('update:install'),

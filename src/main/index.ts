@@ -1,4 +1,5 @@
 import { BrowserWindow, app, dialog, ipcMain, session, shell } from 'electron';
+import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import type { ChatTurn, DocSet, RuntimeState } from '../shared/types';
 import { runTurn } from './agent';
@@ -193,6 +194,14 @@ function registerIpc(update: { install(): void }) {
     if (!path) return;
     if (OPENABLE.has(extname(path).toLowerCase())) await shell.openPath(path);
     else shell.showItemInFolder(path);
+  });
+
+  // Same rule as above: the renderer names an indexed document and never a path.
+  ipcMain.handle('docs:pdf', async (_e, id: number) => {
+    const path = store.documentPath(id);
+    if (!path || extname(path).toLowerCase() !== '.pdf') throw new Error('Not an indexed PDF.');
+    const bytes = await readFile(path);
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   });
 
   ipcMain.handle('update:install', () => update.install());

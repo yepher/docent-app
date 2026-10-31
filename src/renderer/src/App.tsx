@@ -10,6 +10,7 @@ import type {
   RuntimeState,
   UpdateState,
 } from '../../shared/types';
+import { PdfPage } from './PdfPage';
 import { Pacer, Player, Recorder } from './audio';
 
 declare global {
@@ -459,17 +460,7 @@ function Chat({
         <div ref={end} />
       </section>
 
-      {detail && (
-        <aside className="source-detail">
-          <button className="close" aria-label="Close" onClick={() => setDetail(null)}>×</button>
-          <h3>{detail.title}</h3>
-          <p className="fine">
-            {detail.setName}, {where(detail)}
-          </p>
-          <blockquote>{detail.excerpt}</blockquote>
-          <button onClick={() => void api.docs.open(detail.documentId)}>Open file</button>
-        </aside>
-      )}
+      {detail && <SourceDetail key={detail.documentId} citation={detail} onClose={() => setDetail(null)} />}
       </div>
 
       {selection && (
@@ -515,6 +506,30 @@ function Chat({
         </label>
       </form>
     </main>
+  );
+}
+
+function SourceDetail({ citation, onClose }: { citation: Citation; onClose: () => void }) {
+  const [pageFailed, setPageFailed] = useState(false);
+  // Only PDFs have page numbers. Text pulled from a PDF is often unreadable, so show the page itself.
+  const showPage = citation.page !== null && !pageFailed;
+  return (
+    <aside className={`source-detail${showPage ? ' pdf' : ''}`}>
+      <button className="close" aria-label="Close" onClick={onClose}>×</button>
+      <h3>{citation.title}</h3>
+      <p className="fine">
+        {citation.setName}, {where(citation)}
+      </p>
+      {showPage ? (
+        <PdfPage citation={citation} onFailed={() => setPageFailed(true)} />
+      ) : (
+        <>
+          {pageFailed && <p className="fine">The page could not be shown, so this is the text that was read from it.</p>}
+          <blockquote>{citation.excerpt}</blockquote>
+        </>
+      )}
+      <button onClick={() => void api.docs.open(citation.documentId)}>Open file</button>
+    </aside>
   );
 }
 

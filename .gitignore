@@ -4,6 +4,8 @@ node_modules/
 # Build output (build/ is NOT ignored: it holds the macOS entitlements)
 out/
 dist/
+# Copied from pdfjs-dist at build time
+src/renderer/public/pdfjs/
 *.tsbuildinfo
 
 # Downloaded at build time by scripts/fetch-llama.mjs

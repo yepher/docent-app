@@ -15,7 +15,7 @@ On first run it downloads about 1.7 GB of models and verifies them. You need abo
 1. Create a document set in the sidebar and add files or folders.
 2. Tick the sets each question should use. With none ticked, it is a general chat.
 3. Type, or press **Speak**, talk, and press **Stop**.
-4. Press a numbered citation to see the passage and open the file.
+4. Press a numbered citation to see the source. PDFs open at the cited page; other files show the passage.
 
 With **Speak replies** on, each sentence appears as it is spoken.
 

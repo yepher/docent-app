@@ -94,6 +94,10 @@ input:not([type='checkbox']) {
   position: relative; flex: none; width: min(340px, 45%);
   border-left: 1px solid var(--line); padding: 16px; overflow: auto;
 }
+.source-detail.pdf { width: min(600px, 62%); }
+.pdf-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0; }
+.pdf-frame { margin-bottom: 12px; }
+.pdf-frame canvas { display: block; width: 100%; background: #fff; }
 .source-detail .close { position: absolute; top: 8px; right: 8px; border: 0; }
 .source-detail h3 { padding-right: 24px; font-size: 14px; overflow-wrap: anywhere; }
 .source-detail blockquote {

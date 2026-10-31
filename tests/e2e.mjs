@@ -10,6 +10,35 @@ const root = resolve(import.meta.dirname, '..');
 const work = mkdtempSync(join(tmpdir(), 'docent-e2e-'));
 const doc = join(work, 'zebras.md');
 writeFileSync(doc, 'Zebras graze at dawn on the open plain.\n');
+const pdf = join(work, 'attention.pdf');
+writeFileSync(pdf, tinyPdf(['Attention on the first page.', 'Attention on the second page.']));
+const problems = [];
+
+/** Builds a real, minimal PDF with one line of text per page. */
+function tinyPdf(pages) {
+  const objects = [];
+  objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objects[2] = `<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`;
+  objects[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+  pages.forEach((text, i) => {
+    const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+    objects[4 + i * 2] =
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${5 + i * 2} 0 R ` +
+      '/Resources << /Font << /F1 3 0 R >> >> >>';
+    objects[5 + i * 2] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+  });
+  let out = '%PDF-1.4\n';
+  const offsets = [];
+  for (let n = 1; n < objects.length; n++) {
+    offsets[n] = out.length;
+    out += `${n} 0 obj\n${objects[n]}\nendobj\n`;
+  }
+  const xref = out.length;
+  out += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let n = 1; n < objects.length; n++) out += `${String(offsets[n]).padStart(10, '0')} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
 
 const app = await electron.launch({
   args: [root, `--user-data-dir=${join(work, 'profile')}`],
@@ -21,6 +50,13 @@ try {
   page.on('pageerror', (err) => {
     console.error('Page error:', err);
     process.exitCode = 1;
+  });
+  page.on('console', (message) => {
+    const text = message.text();
+    if (message.type() === 'error' || /Content Security Policy|fake worker|Warning: .*(font|wasm|fetch|CMap)/i.test(text)) {
+      console.error('Console:', text);
+      problems.push(text);
+    }
   });
   await page.setViewportSize({ width: 1180, height: 760 });
 
@@ -88,6 +124,44 @@ try {
   // Unticking the only set must take documents out of the answer path.
   await page.getByLabel('Use Wildlife').click();
   await page.getByText('General chat').waitFor();
+
+  // A PDF citation shows the page itself: real pixels, on the right page, with paging.
+  await page.getByPlaceholder('New set name').fill('Papers');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: /Papers/ }).waitFor();
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+  }, process.env.E2E_PDF ?? pdf);
+  await page.getByRole('button', { name: 'Add files' }).click();
+  await page.getByText('Answering from: Papers').waitFor();
+  await page.getByPlaceholder('Ask something').fill('What do the papers say about attention?');
+  await page.getByRole('button', { name: 'Send' }).click();
+  const pdfCite = page.locator('.message.assistant').last().locator('.cite').first();
+  await pdfCite.waitFor();
+  await pdfCite.click();
+  await page.getByText(/^Page \d+ of \d+$/).waitFor();
+  const label = await page.getByText(/^Page \d+ of \d+$/).innerText();
+  const inkOf = () =>
+    page.locator('.pdf-frame canvas').evaluate((canvas) => {
+      const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+      let ink = 0;
+      for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 0 && data[i] < 128) ink++;
+      return ink;
+    });
+  await page.waitForFunction(() => {
+    const c = document.querySelector('.pdf-frame canvas');
+    const { data } = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+    for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 0 && data[i] < 128) return true;
+    return false;
+  });
+  assert.ok((await inkOf()) > 50, 'the PDF page should be drawn');
+  await page.screenshot({ path: process.argv[3] ?? join(work, 'pdf.png') });
+  const [, current, total] = label.match(/Page (\d+) of (\d+)/).map(Number);
+  const step = current < total ? 'Next page' : 'Previous page';
+  await page.getByRole('button', { name: step }).click();
+  await page.getByText(`Page ${step === 'Next page' ? current + 1 : current - 1} of ${total}`).waitFor();
+  assert.equal(await page.locator('.source-detail blockquote').count(), 0, 'no fallback text expected');
+  assert.deepEqual(problems, [], 'PDF rendering should load everything it needs');
   console.log('E2E passed');
 } finally {
   await app.close();

@@ -98,7 +98,7 @@ export interface Api {
     remove(word: string): Promise<void>;
     preview(spoken: string): Promise<{ samples: ArrayBuffer; sampleRate: number }>;
   };
-  docs: { open(documentId: number): Promise<void> };
+  docs: { open(documentId: number): Promise<void>; pdf(documentId: number): Promise<ArrayBuffer> };
   update: {
     onState(cb: (s: UpdateState) => void): () => void;
     install(): Promise<void>;
