@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build output (build/ is NOT ignored: it holds the macOS entitlements)
+out/
+dist/
+*.tsbuildinfo
+
+# Downloaded at build time by scripts/fetch-llama.mjs
+vendor/
+
+# Models and partial downloads
+*.gguf
+*.part
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets and signing material
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# Test output
+coverage/
+test-results/
+playwright-report/
+
+# Logs
+*.log
+
+# Editors and local tool settings
+.vscode/
+.idea/
+*.swp
+.claude/settings.local.json
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
