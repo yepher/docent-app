@@ -1,0 +1,36 @@
+# Push a tag such as v0.2.0 to build every platform and publish a GitHub Release.
+# Installed apps discover it through electron-updater.
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, platform: darwin, arch: arm64, flags: --mac --arm64 }
+          - { os: macos-13, platform: darwin, arch: x64, flags: --mac --x64 }
+          - { os: windows-latest, platform: win32, arch: x64, flags: --win --x64 }
+          - { os: ubuntu-22.04, platform: linux, arch: x64, flags: --linux --x64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: node scripts/fetch-llama.mjs ${{ matrix.platform }} ${{ matrix.arch }}
+      - run: npx electron-builder ${{ matrix.flags }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing. Without these the build is unsigned and macOS cannot auto-update.
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

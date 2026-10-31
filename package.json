@@ -1,0 +1,43 @@
+{
+  "name": "docent",
+  "productName": "Docent",
+  "version": "0.1.0",
+  "description": "Local voice and chat agent that answers from your own documents, with citations. Runs LFM3-Omni on your machine.",
+  "license": "MIT",
+  "author": "Docent contributors <claude@yepher.com>",
+  "homepage": "https://github.com/yepher/docent-app",
+  "repository": "github:yepher/docent-app",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "electron-vite build && node tests/e2e.mjs",
+    "fetch:llama": "node scripts/fetch-llama.mjs",
+    "dist": "electron-vite build && node scripts/fetch-llama.mjs && electron-builder --publish never",
+    "release": "electron-vite build && node scripts/fetch-llama.mjs && electron-builder --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^6.4.299"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "playwright-core": "^1.50.0",
+    "electron": "45.2.1",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

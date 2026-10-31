@@ -1,0 +1,129 @@
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#fbfbfa, #15181c);
+  --panel: light-dark(#f1f1ee, #1c2025);
+  --line: light-dark(#dcdcd6, #30363d);
+  --ink: light-dark(#1d2125, #e7eaee);
+  --muted: light-dark(#666c72, #99a1aa);
+  --accent: light-dark(#17646b, #5cc1c9);
+  --accent-ink: light-dark(#ffffff, #0d1a1b);
+  --danger: light-dark(#a8322d, #f0827c);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); }
+h1, h2, h3 { margin: 0; font-weight: 600; }
+h2 { font-size: 13px; }
+small { color: var(--muted); }
+ul, ol { list-style: none; margin: 0; padding: 0; }
+button, input { font: inherit; color: inherit; }
+button {
+  background: transparent; border: 1px solid var(--line); border-radius: 6px;
+  padding: 4px 10px; cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--panel); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+button.danger { color: var(--danger); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:not([type='checkbox']) {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; min-width: 0;
+}
+.fine { color: var(--muted); font-size: 12px; }
+.warning { color: var(--danger); }
+
+.setup { max-width: 480px; margin: 12vh auto; padding: 0 24px; display: grid; gap: 12px; justify-items: start; }
+.setup progress { width: 100%; }
+.setup pre { white-space: pre-wrap; font-size: 12px; max-width: 100%; overflow: auto; }
+
+.app { display: grid; grid-template-columns: 280px minmax(0, 1fr); height: 100%; position: relative; }
+.sidebar {
+  background: var(--panel); border-right: 1px solid var(--line); padding: 16px 12px;
+  display: flex; flex-direction: column; gap: 8px; overflow: auto;
+}
+.sets { flex: 1; display: grid; gap: 4px; align-content: start; }
+.set-row { display: flex; gap: 8px; align-items: center; }
+.set-name {
+  flex: 1; min-width: 0; border: 0; text-align: left; padding: 4px 6px;
+  display: flex; flex-direction: column;
+}
+.set-name:hover:not(:disabled) { background: var(--line); }
+.set-detail { margin: 4px 0 8px 26px; display: grid; gap: 6px; }
+.actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.actions button { padding: 2px 6px; font-size: 12px; }
+.docs li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
+.docs span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docs span.failed { color: var(--danger); }
+.docs small { order: 3; width: 100%; }
+.docs button { border: 0; padding: 0 4px; }
+.progress { margin: 4px 0 8px 26px; display: grid; }
+.progress progress { width: 100%; }
+.progress small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.new-set { display: flex; gap: 4px; }
+.new-set input { flex: 1; }
+
+.chat { display: flex; flex-direction: column; min-height: 0; position: relative; }
+.chat header {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 10px 20px; border-bottom: 1px solid var(--line);
+}
+.scope { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.messages { flex: 1; overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.empty { margin: auto; color: var(--muted); }
+.message { max-width: 720px; width: 100%; margin: 0 auto; }
+.message.user .text {
+  background: var(--panel); border-radius: 10px; padding: 8px 12px; width: fit-content; margin-left: auto;
+}
+.message.error .text { color: var(--danger); }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.status { color: var(--muted); font-size: 12px; }
+.cite {
+  font-size: 11px; line-height: 1; padding: 2px 5px; margin: 0 1px; vertical-align: 2px;
+  border-color: var(--accent); color: var(--accent);
+}
+.sources { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.sources button, .uncited button { font-size: 12px; text-align: left; }
+.sources b { color: var(--accent); }
+.uncited { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.uncited p { margin: 0 0 4px; }
+.uncited ul { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.body { flex: 1; display: flex; min-height: 0; }
+.source-detail {
+  position: relative; flex: none; width: min(340px, 45%);
+  border-left: 1px solid var(--line); padding: 16px; overflow: auto;
+}
+.source-detail .close { position: absolute; top: 8px; right: 8px; border: 0; }
+.source-detail h3 { padding-right: 24px; font-size: 14px; overflow-wrap: anywhere; }
+.source-detail blockquote {
+  margin: 12px 0; padding-left: 10px; border-left: 2px solid var(--accent); white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mic-error { margin: 0 20px; color: var(--danger); font-size: 12px; }
+.composer {
+  display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line);
+}
+.composer > input { flex: 1; padding: 8px 12px; }
+.mic.recording { background: var(--danger); border-color: var(--danger); color: var(--bg); }
+.speak { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+.update {
+  position: absolute; left: 12px; bottom: 12px; width: 256px; z-index: 3; display: flex; flex-wrap: wrap;
+  gap: 6px; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px; font-size: 12px;
+}
+
+.pronounce {
+  position: fixed; z-index: 4; display: grid; gap: 8px; padding: 10px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / .18); font-size: 12px;
+}
+.pronounce.compact { padding: 4px; }
+.pronounce label { display: grid; gap: 6px; }
+.pronounce p { margin: 0; }
+.pronunciations { font-size: 12px; }
+.pronunciations summary { cursor: pointer; color: var(--muted); }
+.pronunciations li { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+.pronunciations span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pronunciations button { border: 0; padding: 0 4px; }
