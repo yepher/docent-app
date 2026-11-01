@@ -1,4 +1,12 @@
-import { BrowserWindow, app, dialog, ipcMain, session, shell } from "electron";
+import {
+  BrowserWindow,
+  app,
+  dialog,
+  ipcMain,
+  nativeImage,
+  session,
+  shell,
+} from "electron";
 import { access, readFile, rename, rm } from "node:fs/promises";
 import { backup, DatabaseSync } from "node:sqlite";
 import { libraryWork, stopLibraryWorkers } from "./workers";
@@ -36,6 +44,9 @@ import {
   describeTopic,
 } from "./topics";
 import { startUpdater } from "./updater";
+import { ToolManager } from "./tools/manager";
+import { registerToolIpc } from "./tools/ipc";
+import { stopToolWorkers } from "./tools/sandbox";
 
 const RELEASES_URL = "https://github.com/yepher/docent-app/releases";
 const dev = !app.isPackaged;
@@ -65,6 +76,12 @@ function llamaBinary(): string {
 
 let window: BrowserWindow | null = null;
 let store: Store;
+let toolManager: ToolManager;
+let toolsBusy = () => false;
+const createToolManager = () =>
+  new ToolManager(store, {
+    workerPath: join(app.getAppPath(), "out/main/tool-worker.mjs"),
+  });
 let llm: Llm | null = null;
 let embedder: Embedder | null = null;
 let retriever: Retriever | null = null;
@@ -396,6 +413,12 @@ function registerIpc(update: { install(): void; check(): void }) {
           {
             llm,
             analysis: documentTools(store, setIds, req.documentIds),
+            toolkit: hasDocuments
+              ? toolManager.agentTools({
+                  setIds,
+                  documentIds: req.documentIds ?? [],
+                })
+              : undefined,
             search: (q) => search.search(setIds, q, 8, req.documentIds),
             survey: (question) =>
               req.documentIds?.length ? null : search.survey(setIds, question),
@@ -474,7 +497,7 @@ function registerIpc(update: { install(): void; check(): void }) {
     return true;
   });
   ipcMain.handle("library:restore", async () => {
-    if (libraryJobs || turns.size)
+    if (libraryJobs || turns.size || toolsBusy())
       throw new Error(
         "Wait for indexing and answers to finish before restoring.",
       );
@@ -516,6 +539,7 @@ function registerIpc(update: { install(): void; check(): void }) {
       await rename(stage, path);
     } finally {
       store = new Store(path);
+      toolManager = createToolManager();
       retriever = embedder
         ? new Retriever(store, (q) => embedder!.embedQuery(q))
         : null;
@@ -628,7 +652,14 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // BrowserWindow.icon is not used for the macOS Dock in development builds.
+  if (process.platform === "darwin")
+    app.dock?.setIcon(
+      nativeImage.createFromPath(join(app.getAppPath(), "build/icon.png")),
+    );
   store = new Store(databasePath());
+  toolManager = createToolManager();
+  toolsBusy = registerToolIpc(() => toolManager, requireWindow);
 
   // Grant the microphone and nothing else.
   session.defaultSession.setPermissionRequestHandler(
@@ -656,6 +687,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   stopLibraryWorkers();
+  stopToolWorkers();
   sidecars.forEach((s) => s.stop());
   store?.close();
 });

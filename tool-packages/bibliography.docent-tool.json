@@ -1,0 +1,65 @@
+{
+  "format": "docent-tool",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "bibliography",
+    "name": "Extract numbered bibliographies",
+    "description": "List research references from recognized numbered bibliographies in selected documents. Each entry retains its original number and supporting passage IDs. Unsupported formats are reported explicitly.",
+    "version": "1.0.0",
+    "author": "Docent contributors",
+    "license": "MIT",
+    "apiVersion": 1,
+    "permissions": [
+      "documents:read"
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "examples": [
+      {
+        "name": "Extract two references",
+        "input": {}
+      }
+    ]
+  },
+  "code": "function documents(library) {\n  const out = []; let offset = 0;\n  do { const page = library.documents(offset); out.push(...page.documents); offset = page.nextOffset; } while (offset !== null);\n  return out;\n}\nfunction passages(library, id) {\n  const out = []; let offset = 0;\n  do { const page = library.read(id, offset); out.push(...page.passages); offset = page.nextOffset; } while (offset !== null);\n  return out;\n}\nfunction run(input, library) {\n      const found = [], unsupported = [], evidence = [];\n      for (const doc of documents(library)) {\n        const entries = library.references(doc.id).entries;\n        if (!entries.length) { unsupported.push(doc.title); continue; }\n        found.push({ title: doc.title, total: entries.length, entries: entries.slice(0, 100) });\n        for (const entry of entries.slice(0, 100)) for (const id of entry.evidence) if (!evidence.includes(id)) evidence.push(id);\n      }\n      if (evidence.length > 100) throw new Error(\"Choose fewer documents to return bibliography evidence.\");\n      return { data: { documents: found, unsupported }, evidence };\n    }",
+  "tests": [
+    {
+      "name": "Extract two references",
+      "input": {},
+      "documents": [
+        {
+          "title": "Example paper",
+          "text": "References\n[1] A. Author. First study. 2020.\n[2] B. Author. Second study. 2021."
+        }
+      ],
+      "expectedData": {
+        "documents": [
+          {
+            "title": "Example paper",
+            "total": 2,
+            "entries": [
+              {
+                "number": 1,
+                "text": "A. Author. First study. 2020.",
+                "evidence": [
+                  "p1"
+                ]
+              },
+              {
+                "number": 2,
+                "text": "B. Author. Second study. 2021.",
+                "evidence": [
+                  "p1"
+                ]
+              }
+            ]
+          }
+        ],
+        "unsupported": []
+      }
+    }
+  ]
+}

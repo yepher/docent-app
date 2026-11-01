@@ -205,6 +205,15 @@ export class Store {
     );
   }
 
+  documentChunkPage(id: number, offset: number, limit: number): StoredChunk[] {
+    const rows = this.db
+      .prepare(
+        "SELECT id FROM chunks WHERE document_id=? ORDER BY id LIMIT ? OFFSET ?",
+      )
+      .all(id, limit, offset) as { id: number }[];
+    return this.chunksById(rows.map((r) => r.id));
+  }
+
   close() {
     this.db.close();
   }

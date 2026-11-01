@@ -1,0 +1,62 @@
+{
+  "format": "docent-tool",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "count-mentions",
+    "name": "Count documents mentioning a phrase",
+    "description": "Scan every selected document and count distinct documents containing a literal phrase, ignoring letter case. Counts documents, not people or votes. Returns example passages.",
+    "version": "1.0.0",
+    "author": "Docent contributors",
+    "license": "MIT",
+    "apiVersion": 1,
+    "permissions": [
+      "documents:read"
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "phrase": {
+          "type": "string",
+          "description": "Literal phrase to look for",
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "phrase"
+      ],
+      "additionalProperties": false
+    },
+    "examples": [
+      {
+        "name": "Count a phrase once per document",
+        "input": {
+          "phrase": "filter"
+        }
+      }
+    ]
+  },
+  "code": "function documents(library) {\n  const out = []; let offset = 0;\n  do { const page = library.documents(offset); out.push(...page.documents); offset = page.nextOffset; } while (offset !== null);\n  return out;\n}\nfunction passages(library, id) {\n  const out = []; let offset = 0;\n  do { const page = library.read(id, offset); out.push(...page.passages); offset = page.nextOffset; } while (offset !== null);\n  return out;\n}\nfunction run(input, library) {\n      const phrase = input.phrase.trim(); if (!phrase) throw new Error(\"Enter a phrase.\");\n      let count = 0; const evidence = [];\n      for (const doc of documents(library)) {\n        let match = null;\n        for (const p of passages(library, doc.id)) if (!match && p.text.toLowerCase().includes(phrase.toLowerCase())) match = p;\n        if (match) { count++; if (evidence.length < 20) evidence.push(match.id); }\n      }\n      return { data: { phrase, unit: \"distinct documents\", count }, evidence };\n    }",
+  "tests": [
+    {
+      "name": "Count a phrase once per document",
+      "input": {
+        "phrase": "filter"
+      },
+      "documents": [
+        {
+          "title": "Manual",
+          "text": "Filter F19. Replace the filter."
+        },
+        {
+          "title": "Other",
+          "text": "A different subject."
+        }
+      ],
+      "expectedData": {
+        "phrase": "filter",
+        "unit": "distinct documents",
+        "count": 1
+      }
+    }
+  ]
+}

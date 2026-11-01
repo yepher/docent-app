@@ -9,6 +9,7 @@ import { Retriever, normalize } from "../src/main/retrieval";
 import { documentTools, requestExamples } from "../src/main/analysis-tools";
 import { runTurn } from "../src/main/agent";
 import { indexSet } from "../src/main/ingest";
+import { ToolManager } from "../src/main/tools/manager";
 const enabled = process.env.DOCENT_REAL_MODEL_EVAL === "1";
 describe.skipIf(!enabled)("real local model evaluation (opt in)", () => {
   let s: Store;
@@ -85,6 +86,49 @@ describe.skipIf(!enabled)("real local model evaluation (opt in)", () => {
       result.citations.filter((c) => c.cited).length,
     ).toBeGreaterThanOrEqual(2);
   }, 100000);
+  it("chooses an enabled script to count documents and retains its evidence record", async () => {
+    const manager = new ToolManager(s);
+    const result = await runTurn(
+      {
+        llm,
+        hasSelectedDocuments: true,
+        search: (q) => retriever.search([setId], q),
+        analysis: documentTools(s, [setId]),
+        toolkit: manager.agentTools({ setIds: [setId], documentIds: [] }),
+      },
+      "Use the Count documents mentioning a phrase tool to count selected documents containing the literal phrase filter. Report the count and source evidence.",
+      [],
+      { speak: false, signal: AbortSignal.timeout(90000) },
+      { status() {}, delta() {}, audio() {} },
+    );
+    console.log(
+      "REAL MODEL SCRIPT CALL:",
+      result.text,
+      result.toolRuns?.map((r) => ({
+        key: r.toolKey,
+        status: r.status,
+        input: r.input,
+      })),
+    );
+    expect(
+      result.toolRuns?.some(
+        (r) =>
+          r.toolKey === "bundled:count-mentions" &&
+          r.status === "succeeded" &&
+          r.input.phrase === "filter",
+      ),
+    ).toBe(true);
+    expect(result.text).toMatch(/\b(2|two)\b/i);
+    expect(result.citations.filter((c) => c.cited)).toHaveLength(2);
+    for (const filter of ["F19", "F20"]) {
+      const source = result.citations.find((c) => c.excerpt.includes(filter))!;
+      const claim = result.text
+        .split("\n")
+        .find((line) => line.includes(filter));
+      if (claim) expect(claim).toContain(`[${source.n}]`);
+    }
+  }, 100000);
+
   it("proposes auditable feature rules for explicit requests", async () => {
     const rows = [
       "Please add a dedicated thread tool for screws.",
@@ -137,6 +181,10 @@ describe.skipIf(!enabled)("real local model evaluation (opt in)", () => {
           llm,
           search: (q) => retriever.search([papers], q),
           analysis: documentTools(s, [papers]),
+          toolkit: new ToolManager(s).agentTools({
+            setIds: [papers],
+            documentIds: [],
+          }),
           hasSelectedDocuments: true,
         },
         "What other research is referenced",
@@ -153,6 +201,7 @@ describe.skipIf(!enabled)("real local model evaluation (opt in)", () => {
         /layer normalization|neural machine translation|sequence.to.sequence/i,
       );
       expect(result.text).toContain("40 numbered bibliography entries");
+      expect(result.toolRuns?.[0]?.toolKey).toBe("bundled:bibliography");
       expect(result.text).toContain(
         "37. Vinyals & Kaiser, Koo, Petrov, Sutskever, and Hinton. Grammar as a foreign language.",
       );

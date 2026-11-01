@@ -26,6 +26,8 @@ import {
 } from "../../shared/question-scope";
 import { LibrarySearch } from "./LibrarySearch";
 import { PronunciationList } from "./PronunciationList";
+import { ToolsPanel, ToolRunInfo } from "./ToolsPanel";
+import type { ToolRunRecord } from "../../shared/tools";
 import { PdfPage } from "./PdfPage";
 import { TopicMapView } from "./TopicMapView";
 import { Pacer, Player, Recorder } from "./audio";
@@ -38,6 +40,7 @@ declare global {
 const api = window.api;
 
 interface Message {
+  toolRuns?: ToolRunRecord[];
   warnings?: string[];
   id: string;
   role: "user" | "assistant";
@@ -293,8 +296,8 @@ function Sidebar({
       </div>
       <h2>Document sets</h2>
       <p className="fine">
-        Selected sources apply to your next question. Changing them starts
-        fresh context.
+        Selected sources apply to your next question. Changing them starts fresh
+        context.
       </p>
       {indexError && (
         <p role="alert" className="warning">
@@ -543,7 +546,9 @@ function Chat({
   });
   const [scopeDocs, setScopeDocs] = useState<DocumentRow[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [panel, setPanel] = useState<"chat" | "search" | "history">("chat");
+  const [panel, setPanel] = useState<"chat" | "search" | "history" | "tools">(
+    "chat",
+  );
   const [historyQuery, setHistoryQuery] = useState("");
   const [saveError, setSaveError] = useState("");
   const [recording, setRecording] = useState(false);
@@ -649,7 +654,7 @@ function Chat({
                   `[${c.n}] ${c.title}, ${where(c)}\n${c.excerpt}\nVersion: ${c.version ?? "legacy index"}`,
               )
               .join("\n") ?? ""
-          }`,
+          }${m.toolRuns?.length ? `\nTool runs:\n${JSON.stringify(m.toolRuns, null, 2)}` : ""}`,
       )
       .join("\n\n");
   const downloadChat = () => {
@@ -692,6 +697,7 @@ function Chat({
             text: event.text,
             citations: event.citations,
             warnings: event.warnings,
+            toolRuns: event.toolRuns,
             uncited: event.uncited,
             status: null,
           }));
@@ -704,6 +710,7 @@ function Chat({
               text: event.text,
               citations: event.citations,
               warnings: event.warnings,
+              toolRuns: event.toolRuns,
               uncited: event.uncited,
               status: null,
               pending: false,
@@ -843,6 +850,11 @@ function Chat({
         </span>
         <div className="actions">
           <button
+            onClick={() => setPanel(panel === "tools" ? "chat" : "tools")}
+          >
+            Tools
+          </button>
+          <button
             onClick={() => setPanel(panel === "search" ? "chat" : "search")}
           >
             Search library
@@ -925,6 +937,13 @@ function Chat({
       )}
       {saveError && <p role="alert">{saveError}</p>}
       <div className="body">
+        {panel === "tools" && (
+          <ToolsPanel
+            sets={sets}
+            scope={{ setIds: selectedIds, documentIds }}
+            onCite={setDetail}
+          />
+        )}
         {panel === "search" && <LibrarySearch sets={sets} onCite={setDetail} />}
         {panel === "history" && (
           <section className="history">
@@ -1022,6 +1041,9 @@ function Chat({
                   <p key={w} className="evidence-warning">
                     {w}
                   </p>
+                ))}
+                {m.toolRuns?.map((record) => (
+                  <ToolRunInfo key={record.id} record={record} />
                 ))}
                 {m.status && <div className="status">{m.status}…</div>}
                 {cited.length > 0 && (

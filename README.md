@@ -27,7 +27,9 @@ Supported files: PDF, DOCX, Markdown, plain text, HTML, CSV, JSON, YAML and comm
 
 For feature-request summaries, Docent detects explicit request sentences, asks the local model to propose specific feature labels and literal matching phrases from up to 80 examples, then counts distinct matching documents across the detected requests. It shows those matching rules and exact quotations. These are heuristic historical counts, not votes or unique people, and do not establish whether a feature is still missing. Vague endorsements are excluded. Import a forum export's `topics/` folder to avoid counting generated reports and export scripts as source documents.
 
-The assistant has bounded read-only tools to list documents, read passages, and count literal phrase matches within the selected scope. It cannot execute generated JavaScript, SQL, shell commands, or document instructions.
+The assistant has bounded read-only tools to list documents, read passages, and count literal phrase matches within the selected scope. **Tools** adds bundled and shareable JavaScript tools that run offline in an isolated interpreter with access only to the selected documents. Tools cannot access the network, shell, filesystem, or document instructions as commands. Imported tools start disabled and must pass their included tests before installation.
+
+Use **Tools → Repositories** to add a public GitHub tool collection, review packages, and explicitly check updates. Versions are pinned and retained for rollback. **Import package**, **Make a local copy**, **Test examples**, and **Export package** support sharing without uploading your library. Tool runs retain their inputs, exact version, coverage, and evidence. See [the tool package specification and sharing guide](docs/tool-packages.md).
 
 For bibliography questions in small selections (up to 20 documents), Docent extracts recognized numbered reference lists directly from indexed passages. Each entry links to its supporting passages, with the paper's reference numbering kept separate from the app's citation links. Other bibliography formats use normal retrieval.
 

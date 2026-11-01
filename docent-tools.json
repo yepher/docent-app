@@ -1,0 +1,39 @@
+{
+  "format": "docent-tool-collection",
+  "formatVersion": 1,
+  "name": "Docent starter tools",
+  "tools": [
+    {
+      "id": "count-mentions",
+      "name": "Count documents mentioning a phrase",
+      "description": "Scan every selected document and count distinct documents containing a literal phrase, ignoring letter case. Counts documents, not people or votes. Returns example passages.",
+      "version": "1.0.0",
+      "file": "tool-packages/count-mentions.docent-tool.json",
+      "sha256": "dd0c508c0e38b989d6d22c47b5059c506475f6d9387fdfcc5a40b2cb96207ed5"
+    },
+    {
+      "id": "bibliography",
+      "name": "Extract numbered bibliographies",
+      "description": "List research references from recognized numbered bibliographies in selected documents. Each entry retains its original number and supporting passage IDs. Unsupported formats are reported explicitly.",
+      "version": "1.0.0",
+      "file": "tool-packages/bibliography.docent-tool.json",
+      "sha256": "d4f597dbd934d0b1334f966b05f392b7f006e92e81d13f5450449870031f6861"
+    },
+    {
+      "id": "duplicate-originals",
+      "name": "Find duplicate original files",
+      "description": "Find selected documents whose saved originals have identical content hashes. This detects exact file copies, not paraphrases or semantically similar documents.",
+      "version": "1.0.0",
+      "file": "tool-packages/duplicate-originals.docent-tool.json",
+      "sha256": "8f000a76e977ae105bd5040e18c689ca70b83c51c71805ba42e3c23f87b86f51"
+    },
+    {
+      "id": "compare-passages",
+      "name": "Compare document passages",
+      "description": "Compare two selected document IDs by exact indexed passage text. Return added and removed passages with evidence. Chunk boundaries can change when a file is edited; this is a textual comparison, not a semantic judgment.",
+      "version": "1.0.0",
+      "file": "tool-packages/compare-passages.docent-tool.json",
+      "sha256": "3d5d98163b60338fafc2b88f0848f4fe836c36dd16cb36a61fe8581fcd3f1b88"
+    }
+  ]
+}

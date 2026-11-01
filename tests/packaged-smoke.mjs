@@ -32,6 +32,26 @@ try {
   await page
     .getByRole("button", { name: "Search library", exact: true })
     .waitFor();
+  assert.equal(
+    await app.evaluate(({ app, nativeImage }) => {
+      const { join } = process.getBuiltinModule("node:path");
+      return nativeImage
+        .createFromPath(join(app.getAppPath(), "build/icon.png"))
+        .isEmpty();
+    }),
+    false,
+    "The runtime Dock icon is included in the packaged app",
+  );
+  const tools = await page.evaluate(() => window.api.tools.list());
+  assert.equal(tools.filter((t) => t.origin.kind === "bundled").length, 4);
+  const toolTests = await page.evaluate(
+    (pkg) => window.api.tools.testPackage(pkg),
+    tools[0].package,
+  );
+  assert.ok(
+    toolTests.every((t) => t.passed),
+    JSON.stringify(toolTests),
+  );
   const parse = (path) =>
     app.evaluate(async ({ app }, path) => {
       const { Worker } = process.getBuiltinModule("node:worker_threads");
@@ -66,7 +86,9 @@ try {
     blank.error ?? "",
     /No readable text found, including after local OCR/,
   );
-  console.log("Packaged worker and local OCR smoke test passed");
+  console.log(
+    "Packaged worker, local OCR, and offline QuickJS tool smoke test passed",
+  );
 } finally {
   await app.close();
   rmSync(work, { recursive: true, force: true });

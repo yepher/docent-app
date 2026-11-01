@@ -1,0 +1,78 @@
+{
+  "format": "docent-tool",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "compare-passages",
+    "name": "Compare document passages",
+    "description": "Compare two selected document IDs by exact indexed passage text. Return added and removed passages with evidence. Chunk boundaries can change when a file is edited; this is a textual comparison, not a semantic judgment.",
+    "version": "1.0.0",
+    "author": "Docent contributors",
+    "license": "MIT",
+    "apiVersion": 1,
+    "permissions": [
+      "documents:read"
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "beforeId": {
+          "type": "integer",
+          "format": "document-id",
+          "minimum": 1,
+          "description": "Original document"
+        },
+        "afterId": {
+          "type": "integer",
+          "format": "document-id",
+          "minimum": 1,
+          "description": "Revised document"
+        }
+      },
+      "required": [
+        "beforeId",
+        "afterId"
+      ],
+      "additionalProperties": false
+    },
+    "examples": [
+      {
+        "name": "Compare revised instructions",
+        "input": {
+          "beforeId": 1,
+          "afterId": 2
+        }
+      }
+    ]
+  },
+  "code": "function documents(library) {\n  const out = []; let offset = 0;\n  do { const page = library.documents(offset); out.push(...page.documents); offset = page.nextOffset; } while (offset !== null);\n  return out;\n}\nfunction passages(library, id) {\n  const out = []; let offset = 0;\n  do { const page = library.read(id, offset); out.push(...page.passages); offset = page.nextOffset; } while (offset !== null);\n  return out;\n}\nfunction run(input, library) {\n      const before = passages(library, input.beforeId), after = passages(library, input.afterId);\n      const key = p => p.text.replace(/\\s+/g, \" \").trim();\n      const old = new Set(before.map(key)), next = new Set(after.map(key));\n      const removed = before.filter(p => !next.has(key(p))), added = after.filter(p => !old.has(key(p)));\n      const shown = [...removed.slice(0, 20), ...added.slice(0, 20)];\n      return { data: { removedCount: removed.length, addedCount: added.length,\n        removed: removed.slice(0, 20).map(p => p.text), added: added.slice(0, 20).map(p => p.text),\n        truncated: removed.length > 20 || added.length > 20 }, evidence: shown.map(p => p.id) };\n    }",
+  "tests": [
+    {
+      "name": "Compare revised instructions",
+      "input": {
+        "beforeId": 1,
+        "afterId": 2
+      },
+      "documents": [
+        {
+          "title": "Before",
+          "text": "Replace filter F19."
+        },
+        {
+          "title": "After",
+          "text": "Replace filter F20."
+        }
+      ],
+      "expectedData": {
+        "removedCount": 1,
+        "addedCount": 1,
+        "removed": [
+          "Replace filter F19."
+        ],
+        "added": [
+          "Replace filter F20."
+        ],
+        "truncated": false
+      }
+    }
+  ]
+}

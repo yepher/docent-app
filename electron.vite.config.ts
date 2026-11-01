@@ -22,7 +22,18 @@ function pdfjsAssets(): Plugin {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [
+      externalizeDepsPlugin(),
+      {
+        name: "tool-worker",
+        writeBundle() {
+          cpSync(
+            resolve("src/main/tools/worker.mjs"),
+            resolve("out/main/tool-worker.mjs"),
+          );
+        },
+      },
+    ],
     build: {
       rollupOptions: {
         input: {

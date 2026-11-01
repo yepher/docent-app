@@ -1,0 +1,59 @@
+{
+  "format": "docent-tool",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "duplicate-originals",
+    "name": "Find duplicate original files",
+    "description": "Find selected documents whose saved originals have identical content hashes. This detects exact file copies, not paraphrases or semantically similar documents.",
+    "version": "1.0.0",
+    "author": "Docent contributors",
+    "license": "MIT",
+    "apiVersion": 1,
+    "permissions": [
+      "documents:read"
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "examples": [
+      {
+        "name": "Find identical copies",
+        "input": {}
+      }
+    ]
+  },
+  "code": "function documents(library) {\n  const out = []; let offset = 0;\n  do { const page = library.documents(offset); out.push(...page.documents); offset = page.nextOffset; } while (offset !== null);\n  return out;\n}\nfunction passages(library, id) {\n  const out = []; let offset = 0;\n  do { const page = library.read(id, offset); out.push(...page.passages); offset = page.nextOffset; } while (offset !== null);\n  return out;\n}\nfunction run(input, library) {\n      const byHash = new Map(), evidence = [];\n      for (const doc of documents(library)) {\n        if (!doc.version) continue;\n        if (!byHash.has(doc.version)) byHash.set(doc.version, []);\n        byHash.get(doc.version).push(doc);\n      }\n      const groups = [];\n      for (const docs of byHash.values()) if (docs.length > 1) {\n        groups.push({ documents: docs.map(d => d.title) });\n        for (const doc of docs) { const p = library.read(doc.id, 0, 1).passages[0]; if (p && evidence.length < 100) evidence.push(p.id); }\n      }\n      return { data: { unit: \"identical original files\", groups }, evidence };\n    }",
+  "tests": [
+    {
+      "name": "Find identical copies",
+      "input": {},
+      "documents": [
+        {
+          "title": "Copy A",
+          "text": "Identical content."
+        },
+        {
+          "title": "Copy B",
+          "text": "Identical content."
+        },
+        {
+          "title": "Different",
+          "text": "Different content."
+        }
+      ],
+      "expectedData": {
+        "unit": "identical original files",
+        "groups": [
+          {
+            "documents": [
+              "Copy A",
+              "Copy B"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

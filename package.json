@@ -15,9 +15,10 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:tools": "node --experimental-strip-types scripts/build-tool-catalog.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "electron-vite build && node tests/e2e.mjs",
+    "test:e2e": "electron-vite build && node tests/e2e.mjs && node tests/tools-e2e.mjs",
     "fetch:llama": "node scripts/fetch-llama.mjs",
     "dist": "electron-vite build && node scripts/fetch-llama.mjs && electron-builder --publish never",
     "release": "electron-vite build && node scripts/fetch-llama.mjs && electron-builder --publish always"
@@ -28,6 +29,7 @@
     "electron-updater": "^6.8.11",
     "mammoth": "^1.13.0",
     "pdfjs-dist": "^6.4.299",
+    "quickjs-emscripten": "0.32.0",
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {

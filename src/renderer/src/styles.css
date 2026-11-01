@@ -827,3 +827,49 @@ mark {
   padding-left: 10px;
   color: var(--muted);
 }
+
+.tools-panel {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 20px;
+}
+.tools-panel h2, .tools-panel h3 { margin: 0 0 8px; }
+.tools-title { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 12px; }
+.tools-title p { margin: 4px 0 12px; color: var(--muted); }
+.tool-tabs { margin: 16px 0; }
+.tool-tabs [aria-pressed="true"] { border-color: var(--accent); background: var(--panel); }
+.tool-workspace { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr); gap: 16px; align-items: start; }
+.tool-list { display: grid; gap: 10px; }
+.tool-card, .tool-detail, .tool-preview, .tool-editor, .tool-result {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+.tool-card.active { border-color: var(--accent); }
+.tool-card p { font-size: 12px; color: var(--muted); }
+.tool-name { display: grid; gap: 6px; text-align: left; width: 100%; border: 0; padding: 0; background: none; }
+.tool-name small { color: var(--muted); font-size: 11px; }
+.tool-enable { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 12px; }
+.tool-detail > label, .tool-editor > label { display: grid; gap: 8px; margin: 12px 0; font-size: 12px; }
+.tool-fields > label { display: grid; gap: 6px; margin: 12px 0; font-size: 12px; }
+.tools-panel textarea { width: 100%; min-height: 110px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: var(--bg); color: var(--ink); font: 12px/1.5 ui-monospace, monospace; }
+.tool-editor textarea { min-height: 330px; }
+.tools-panel pre, .tool-run-info pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; font: 12px/1.5 ui-monospace, monospace; }
+.tools-panel details { margin: 10px 0; }
+.tools-panel summary { cursor: pointer; }
+.tool-repo-form { display: flex; gap: 8px; margin: 12px 0; }
+.tool-repo-form input { flex: 1; min-width: 0; }
+.catalog-tool { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+.catalog-tool button { justify-self: start; }
+.catalog-tool p { margin: 0; }
+.tool-result { margin-top: 12px; }
+.tool-run-info { font-size: 12px; border-left: 3px solid var(--accent); padding-left: 10px; }
+.tool-run-info p { color: var(--muted); }
+.tool-evidence { display: grid; gap: 6px; font-size: 12px; }
+.tool-evidence button { text-align: left; }
+.tool-version { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 0; font-size: 12px; }
+.tool-tests { font-size: 12px; }
+@media (max-width: 1100px) { .tool-workspace { grid-template-columns: 1fr; } }

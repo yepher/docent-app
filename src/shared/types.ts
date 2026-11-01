@@ -1,3 +1,5 @@
+import type { ToolRunRecord, ToolsApi } from "./tools";
+
 export interface DocSet {
   id: number;
   name: string;
@@ -58,6 +60,7 @@ export type ChatEvent =
     }
   | {
       type: "evidence";
+      toolRuns?: ToolRunRecord[];
       warnings?: string[];
       turnId: string;
       text: string;
@@ -66,6 +69,7 @@ export type ChatEvent =
     }
   | {
       type: "done";
+      toolRuns?: ToolRunRecord[];
       warnings?: string[];
       turnId: string;
       text: string;
@@ -142,6 +146,7 @@ export interface TopicMap {
 }
 
 export interface SavedMessage {
+  toolRuns?: ToolRunRecord[];
   warnings?: string[];
   id: string;
   role: "user" | "assistant";
@@ -174,6 +179,7 @@ export interface ImportReport {
   skipped: number;
 }
 export interface Api {
+  tools: ToolsApi;
   runtime: {
     state(): Promise<RuntimeState>;
     install(): Promise<void>;

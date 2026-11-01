@@ -8,6 +8,26 @@ function subscribe<T>(channel: string, cb: (value: T) => void) {
 }
 
 const api: Api = {
+  tools: {
+    list: () => ipcRenderer.invoke("tools:list"),
+    repositories: () => ipcRenderer.invoke("tools:repositories"),
+    addRepository: (url) => ipcRenderer.invoke("tools:addRepository", url),
+    checkRepository: (id) => ipcRenderer.invoke("tools:checkRepository", id),
+    removeRepository: (id) => ipcRenderer.invoke("tools:removeRepository", id),
+    prepareRepository: (id, toolId) =>
+      ipcRenderer.invoke("tools:prepareRepository", id, toolId),
+    importPackage: () => ipcRenderer.invoke("tools:importPackage"),
+    prepareLocal: (pkg) => ipcRenderer.invoke("tools:prepareLocal", pkg),
+    install: (token) => ipcRenderer.invoke("tools:install", token),
+    enable: (key, enabled) => ipcRenderer.invoke("tools:enable", key, enabled),
+    rollback: (key, hash) => ipcRenderer.invoke("tools:rollback", key, hash),
+    remove: (key) => ipcRenderer.invoke("tools:remove", key),
+    exportPackage: (key) => ipcRenderer.invoke("tools:exportPackage", key),
+    testPackage: (pkg) => ipcRenderer.invoke("tools:testPackage", pkg),
+    run: (req) => ipcRenderer.invoke("tools:run", req),
+    cancel: (id) => ipcRenderer.invoke("tools:cancel", id),
+    runs: () => ipcRenderer.invoke("tools:runs"),
+  },
   platform: process.platform,
   runtime: {
     restart: () => ipcRenderer.invoke("runtime:restart"),
