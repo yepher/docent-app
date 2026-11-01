@@ -91,6 +91,39 @@ try {
   assert.match(answer, /in your documents/);
   assert.doesNotMatch(answer, /\[9\]/, 'invented citation should be removed');
 
+  // Exercise the real preload/IPC path while keeping the user's system clipboard untouched.
+  await app.evaluate(({ clipboard }) => {
+    globalThis.copiedTexts = [];
+    globalThis.failClipboard = false;
+    clipboard.writeText = (text) => {
+      if (globalThis.failClipboard) throw new Error('Simulated clipboard failure');
+      globalThis.copiedTexts.push(text);
+    };
+  });
+  const answerActions = page.locator('.message.assistant .actions').first();
+  await answerActions.getByRole('button', { name: 'Copy', exact: true }).click();
+  await answerActions.getByRole('button', { name: 'Copied!', exact: true }).waitFor();
+  const copiedAnswer = await app.evaluate(() => globalThis.copiedTexts.at(-1));
+  assert.equal(copiedAnswer, 'The answer is in your documents [1]. An invented source is ignored.');
+  await page.getByRole('button', { name: 'Copy with sources', exact: true }).click();
+  await page.locator('.scope-options').getByRole('button', { name: 'Copied!', exact: true }).waitFor();
+  const copiedSources = await app.evaluate(() => globalThis.copiedTexts.at(-1));
+  assert.ok(copiedSources.includes('Question: When do zebras graze?'));
+  assert.ok(copiedSources.includes(`Answer: ${copiedAnswer}`));
+  assert.match(copiedSources, /\[1\] zebras\.md, line 1\nZebras graze at dawn on the open plain\./);
+  assert.match(copiedSources, /Version: [a-f0-9]{64}/);
+  // Copy failures are visible, leave the answer intact, and can be retried.
+  await answerActions.getByRole('button', { name: 'Copy', exact: true }).waitFor();
+  await app.evaluate(() => { globalThis.failClipboard = true; });
+  await answerActions.getByRole('button', { name: 'Copy', exact: true }).click();
+  await answerActions.getByRole('alert').filter({ hasText: 'Could not copy' }).waitFor();
+  assert.equal(await page.locator('.message.assistant .text').innerText(), answer);
+  assert.equal(await app.evaluate(() => globalThis.copiedTexts.length), 2);
+  await app.evaluate(() => { globalThis.failClipboard = false; });
+  await answerActions.getByRole('button', { name: 'Copy', exact: true }).click();
+  await answerActions.getByRole('button', { name: 'Copied!', exact: true }).waitFor();
+  assert.equal(await answerActions.getByRole('alert').count(), 0);
+
   await cite.first().click();
   await page.getByText('Zebras graze at dawn').first().waitFor();
   await page.getByText('When do zebras graze?').waitFor();

@@ -1,6 +1,7 @@
 import {
   BrowserWindow,
   app,
+  clipboard,
   dialog,
   ipcMain,
   nativeImage,
@@ -292,6 +293,11 @@ function maintainLibrary() {
 }
 
 function registerIpc(update: { install(): void; check(): void }) {
+  ipcMain.handle("clipboard:writeText", (_event, text: string) => {
+    if (typeof text !== "string")
+      throw new Error("Clipboard content must be text.");
+    clipboard.writeText(text);
+  });
   ipcMain.handle("runtime:restart", () => {
     if (libraryJobs || turns.size)
       throw new Error("Wait for current work to finish.");

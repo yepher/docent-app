@@ -179,6 +179,7 @@ export interface ImportReport {
   skipped: number;
 }
 export interface Api {
+  clipboard: { writeText(text: string): Promise<void> };
   tools: ToolsApi;
   runtime: {
     state(): Promise<RuntimeState>;

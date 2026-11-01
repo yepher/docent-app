@@ -31,6 +31,7 @@ import type { ToolRunRecord } from "../../shared/tools";
 import { PdfPage } from "./PdfPage";
 import { TopicMapView } from "./TopicMapView";
 import { Pacer, Player, Recorder } from "./audio";
+import { CopyButton } from "./CopyButton";
 
 declare global {
   interface Window {
@@ -991,11 +992,11 @@ function Chat({
         )}
         {messages.length > 0 && (
           <>
-            <button
-              onClick={() => void navigator.clipboard.writeText(exportText())}
-            >
-              Copy with sources
-            </button>
+            <CopyButton
+              key={sessionId}
+              text={exportText()}
+              label="Copy with sources"
+            />
             <button onClick={downloadChat}>Export</button>
           </>
         )}
@@ -1095,11 +1096,7 @@ function Chat({
                     >
                       {m.saved ? "★ Saved" : "☆ Save answer"}
                     </button>
-                    <button
-                      onClick={() => void navigator.clipboard.writeText(m.text)}
-                    >
-                      Copy
-                    </button>
+                    <CopyButton text={m.text} />
                     {!m.error && m.text.trim() && (
                       <button
                         className="read-aloud"

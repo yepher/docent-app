@@ -8,6 +8,9 @@ function subscribe<T>(channel: string, cb: (value: T) => void) {
 }
 
 const api: Api = {
+  clipboard: {
+    writeText: (text) => ipcRenderer.invoke("clipboard:writeText", text),
+  },
   tools: {
     list: () => ipcRenderer.invoke("tools:list"),
     repositories: () => ipcRenderer.invoke("tools:repositories"),
