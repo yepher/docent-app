@@ -36,6 +36,11 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSMicrophoneUsageDescription: Docent uses the microphone for voice questions. Audio is processed on this computer.
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: Documents and folders for Docent
+        CFBundleTypeRole: Viewer
+        LSHandlerRank: Alternate
+        LSItemContentTypes: [public.data, public.folder]
 win:
   icon: build/icon.ico
   target: [nsis]

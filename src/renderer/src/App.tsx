@@ -32,6 +32,7 @@ import { PdfPage } from "./PdfPage";
 import { TopicMapView } from "./TopicMapView";
 import { Pacer, Player, Recorder } from "./audio";
 import { CopyButton } from "./CopyButton";
+import { DropImport } from "./DropImport";
 
 declare global {
   interface Window {
@@ -244,6 +245,7 @@ function Workspace({ ready }: { ready: boolean }) {
         />
       )}
       <UpdateBanner />
+      <DropImport sets={sets} ready={ready} onImported={refresh} />
     </div>
   );
 }

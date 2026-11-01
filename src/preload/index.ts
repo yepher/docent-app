@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { Api } from "../shared/types";
 
 function subscribe<T>(channel: string, cb: (value: T) => void) {
@@ -8,6 +8,18 @@ function subscribe<T>(channel: string, cb: (value: T) => void) {
 }
 
 const api: Api = {
+  imports: {
+    drop: (files) =>
+      ipcRenderer.invoke(
+        "imports:drop",
+        files.map((file) => webUtils.getPathForFile(file)),
+      ),
+    pending: () => ipcRenderer.invoke("imports:pending"),
+    confirm: (id, destination) =>
+      ipcRenderer.invoke("imports:confirm", id, destination),
+    dismiss: (id) => ipcRenderer.invoke("imports:dismiss", id),
+    onPending: (cb) => subscribe("imports:pending", cb),
+  },
   clipboard: {
     writeText: (text) => ipcRenderer.invoke("clipboard:writeText", text),
   },

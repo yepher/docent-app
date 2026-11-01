@@ -49,6 +49,8 @@ import { startUpdater } from "./updater";
 import { ToolManager } from "./tools/manager";
 import { registerToolIpc } from "./tools/ipc";
 import { stopToolWorkers } from "./tools/sandbox";
+import { ImportInbox } from "./imports";
+import type { ImportDestination } from "../shared/imports";
 
 const RELEASES_URL = "https://github.com/yepher/docent-app/releases";
 const dev = !app.isPackaged;
@@ -113,6 +115,38 @@ const citationOf = (c: import("./store").StoredChunk, i: number): Citation => ({
 
 const send = (channel: string, payload: unknown) =>
   window?.webContents.send(channel, payload);
+
+const importInbox = new ImportInbox((requests) =>
+  send("imports:pending", requests),
+);
+let importsReady = false;
+let dockTimer: ReturnType<typeof setTimeout> | undefined;
+const dockPaths = new Set<string>();
+async function flushDockImports() {
+  if (!importsReady || !dockPaths.size) return;
+  const paths = [...dockPaths];
+  dockPaths.clear();
+  if (!window) createWindow();
+  if (window!.isMinimized()) window!.restore();
+  window!.show();
+  window!.focus();
+  try {
+    await importInbox.stage(paths);
+  } catch (error) {
+    await dialog.showMessageBox(requireWindow(), {
+      type: "error",
+      message: "Could not prepare the import",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+// macOS can deliver Dock drops before ready, including the drop that launches Docent.
+app.on("open-file", (event, path) => {
+  event.preventDefault();
+  dockPaths.add(path);
+  clearTimeout(dockTimer);
+  dockTimer = setTimeout(() => void flushDockImports(), 100);
+});
 
 function setState(next: RuntimeState) {
   state = next;
@@ -293,6 +327,25 @@ function maintainLibrary() {
 }
 
 function registerIpc(update: { install(): void; check(): void }) {
+  ipcMain.handle("imports:drop", async (_event, paths: unknown) => {
+    await importInbox.stage(paths);
+  });
+  ipcMain.handle("imports:pending", () => importInbox.list());
+  ipcMain.handle("imports:dismiss", (_event, id: string) =>
+    importInbox.dismiss(id),
+  );
+  ipcMain.handle(
+    "imports:confirm",
+    (_event, id: string, destination: ImportDestination) => {
+      if (!embedder)
+        throw new Error(
+          "Start the local models before importing. Your dropped items are still waiting.",
+        );
+      const set = importInbox.confirm(id, destination, store);
+      void reindex(set.id);
+      return set;
+    },
+  );
   ipcMain.handle("clipboard:writeText", (_event, text: string) => {
     if (typeof text !== "string")
       throw new Error("Clipboard content must be text.");
@@ -708,6 +761,8 @@ app.whenReady().then(async () => {
   const update = startUpdater((s) => send("update:state", s));
   registerIpc(update);
   createWindow();
+  importsReady = true;
+  void flushDockImports();
   await boot();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -719,6 +774,8 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  importsReady = false;
+  clearTimeout(dockTimer);
   stopLibraryWorkers();
   stopToolWorkers();
   sidecars.forEach((s) => s.stop());

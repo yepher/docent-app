@@ -19,6 +19,8 @@ On first run it downloads about 1.7 GB of models and verifies them. You need abo
 
 Speech is off by default. Click the small **Read aloud** speaker button beside an answer's Save and Copy actions to hear that answer, including answers in saved conversations. Click it again to stop. Playback uses the local voice model and saved pronunciations, omits citation markers, and does not regenerate or change the answer. With **Speak replies** on, text streams immediately and evidence appears as soon as generation finishes, independently of playback.
 
+You can also drag files or folders into Docent's main panel. On macOS, drop them onto the packaged **Docent.app** Dock icon, including when the app is closed. The import chooser lets you select an existing document set or create a new one; nothing is added until you click **Import**. Folder imports include supported documents in subfolders, and originals stay in place. Local models must be running to index the import. Dock support uses the packaged app's document registration; the generic Electron development icon does not have Docent's file associations.
+
 To correct how a word is said, select it in an answer and choose **Set pronunciation**. Spell it how it sounds, press **Preview** to hear it, then **Save**. It applies to all future speech, and changes only the voice, not the written answer. In the sidebar's **Pronunciations** list, use **Edit** to revise a saved pronunciation and **Test** to hear either the saved pronunciation or your unsaved edit. **Cancel** keeps the saved value.
 
 Press a file in a set to open it in its default app or show it in Finder, File Explorer or your file manager. Scripts and programs can only be shown in their folder, so opening one never runs it.
@@ -96,10 +98,22 @@ DOCENT_LLAMA_BIN="$PWD/tests/fake-llama-server.mjs" npm run dev
 
 ## Releasing
 
-1. Bump `version` in `package.json`.
-2. Tag and push: `git tag v0.2.0 && git push --tags`.
+Edit `.github/release-notes.md` and commit your changes first. Then run:
 
-`.github/workflows/release.yml` builds each platform into a draft release and publishes it once all of them succeed. Edit `.github/release-notes.md` first; it becomes the release text.
+```sh
+npm run release                  # 0.1.0 -> 0.1.1 (patch bump by default)
+npm run release -- 0.2.0         # explicit version; a leading v is also accepted
+npm run release -- --dry-run     # preview the next version without changing or publishing anything
+npm run release -- 1.0.0 --dry-run
+```
+
+You can also invoke `node scripts/release.mjs [version] [--dry-run]` directly. Versions must be stable `major.minor.patch` values higher than the current version. The example `0.1.0` → `0.1.1` increments the patch component; use an explicit `0.2.0` for a minor release.
+
+The script requires a clean Git checkout on a branch and an `origin` remote you can push to. It checks for existing tags and remote commits, runs typecheck, tests, and build, updates both `package.json` and `package-lock.json`, commits the version change, creates an annotated `vX.Y.Z` tag, and pushes that branch and tag together with an atomic push. It does not force-push or push unrelated tags. Dry runs skip checks that run commands or access the network, so they are safe while preparing uncommitted work.
+
+That tag triggers `.github/workflows/release.yml`, which builds each platform into a draft release and publishes it once all of them succeed. The local command reports when the release is queued; watch **Actions → Release** for completion. Release text comes from the committed `.github/release-notes.md`. GitHub repository release/signing credentials stay in Actions; the local script only needs Git push access.
+
+If validation fails, versions are unchanged. If a later commit, tag, or push fails, the script keeps the local work and prints recovery guidance. Pushing requires server support for atomic updates. Check the remote after a failed push before retrying. Once the local commit and tag exist, retry the push rather than bumping another version: `git push --atomic --no-follow-tags origin HEAD vX.Y.Z`.
 
 macOS only applies updates to signed apps, so macOS auto-update needs an Apple Developer ID. Add these repository secrets: `MAC_CERTIFICATE_P12_BASE64`, `MAC_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`. Without them the macOS build is unsigned, and users must update by hand. Unsigned Windows builds update normally but show a SmartScreen warning on first install.
 

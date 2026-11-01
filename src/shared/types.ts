@@ -1,4 +1,5 @@
 import type { ToolRunRecord, ToolsApi } from "./tools";
+import type { ImportsApi } from "./imports";
 
 export interface DocSet {
   id: number;
@@ -179,6 +180,7 @@ export interface ImportReport {
   skipped: number;
 }
 export interface Api {
+  imports: ImportsApi;
   clipboard: { writeText(text: string): Promise<void> };
   tools: ToolsApi;
   runtime: {
