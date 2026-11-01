@@ -248,7 +248,8 @@ describe('search and indexing', () => {
     expect(await collectFiles(join(dir, 'docs'))).toEqual([join(dir, 'docs/a.md')]);
   });
 
-  it('reads PDF text page by page', async () => {
+  // The first PDF also loads pdfjs, which took 5.8s on a Windows runner.
+  it('reads PDF text page by page', { timeout: 30_000 }, async () => {
     const path = join(dir, 'two-pages.pdf');
     writeFileSync(path, tinyPdf(['Zebras graze at dawn', 'Budgets close in March']));
     const segments = await parseFile(path);
