@@ -7,6 +7,7 @@ directories:
 files:
   - out/**
   - package.json
+  - build/icon.png
 # The sidecar matching each build. scripts/fetch-llama.mjs fills these folders.
 extraResources:
   - from: vendor/llama/${platform}-${arch}
@@ -18,7 +19,13 @@ publish:
   provider: github
   owner: yepher
   repo: docent-app
+asarUnpack:
+  - node_modules/@napi-rs/**
+  - node_modules/tesseract.js/**
+  - node_modules/tesseract.js-core/**
+  - node_modules/@tesseract.js-data/**
 mac:
+  icon: build/icon.icns
   category: public.app-category.productivity
   # No arch lists on targets: they override --arm64/--x64 on the command line.
   target:
@@ -30,11 +37,13 @@ mac:
   extendInfo:
     NSMicrophoneUsageDescription: Docent uses the microphone for voice questions. Audio is processed on this computer.
 win:
+  icon: build/icon.ico
   target: [nsis]
 nsis:
   oneClick: true
   perMachine: false
 linux:
+  icon: build/icon.png
   category: Utility
   target:
     - AppImage # the auto-updating Linux format

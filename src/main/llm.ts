@@ -167,7 +167,7 @@ export class LlamaServerEmbedder implements Embedder {
   }
 
   private async embed(input: string[]): Promise<Float32Array[]> {
-    const res = await post(this.endpoint, '/v1/embeddings', { input });
+    const res = await post(this.endpoint, '/v1/embeddings', { input }, AbortSignal.timeout(60_000));
     const body = (await res.json()) as { data: { index: number; embedding: number[] }[] };
     return body.data.sort((a, b) => a.index - b.index).map((d) => Float32Array.from(d.embedding));
   }

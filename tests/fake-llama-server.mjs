@@ -3,6 +3,7 @@
 // and speaks the same HTTP routes, but contains no model: embeddings are word hashes and every
 // answer is canned. Passing against this proves the app's plumbing, not real model behavior.
 import { createServer } from 'node:http';
+import { appendFileSync } from 'node:fs';
 
 const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const port = Number(arg('--port'));
@@ -38,6 +39,7 @@ createServer(async (req, res) => {
     return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data }));
   }
   if (req.url === '/tts') {
+    if (process.env.DOCENT_TEST_TTS_LOG) appendFileSync(process.env.DOCENT_TEST_TTS_LOG, JSON.stringify(body.input) + '\n');
     res.writeHead(200, { 'content-type': 'audio/pcm;rate=24000;encoding=float;bits=32' });
     const audio = Buffer.alloc(24000 * 4);
     if (!body.stream) return res.end(audio);
@@ -49,6 +51,7 @@ createServer(async (req, res) => {
     return res.end();
   }
   if (req.url === '/v1/chat/completions') {
+    if (process.env.DOCENT_TEST_CHAT_LOG) appendFileSync(process.env.DOCENT_TEST_CHAT_LOG, JSON.stringify(body.messages) + '\n');
     if (!body.stream) {
       const content = 'What does the report say?';
       return res.writeHead(200, { 'content-type': 'application/json' }).end(

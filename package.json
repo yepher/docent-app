@@ -9,7 +9,9 @@
   "repository": "github:yepher/docent-app",
   "type": "module",
   "main": "./out/main/index.js",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -21,19 +23,22 @@
     "release": "electron-vite build && node scripts/fetch-llama.mjs && electron-builder --publish always"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.1.0",
+    "@tesseract.js-data/eng": "^1.0.0",
     "electron-updater": "^6.8.11",
     "mammoth": "^1.13.0",
-    "pdfjs-dist": "^6.4.299"
+    "pdfjs-dist": "^6.4.299",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.0",
-    "playwright-core": "^1.50.0",
     "electron": "45.2.1",
     "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
+    "playwright-core": "^1.50.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "typescript": "^7.0.2",

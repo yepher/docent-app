@@ -350,12 +350,12 @@ describe('runTurn', () => {
     expect(spoken).toEqual(['One.', 'Two.', 'Three.']);
   });
 
-  it('sends each sentence with its first audio chunk only, once', async () => {
+  it('streams text independently of audio playback', async () => {
     const { llm } = scriptedLlm(['One [1]. Two.']);
     const e = events();
     await runTurn({ llm, search: async () => [chunk(1, 'a')], hasSelectedDocuments: true }, 'q', [], opts(true), e);
-    expect(e.paced).toEqual(['One [1]. ', 'Two.']);
-    expect(e.log).toEqual([]);
+    expect(e.paced).toEqual([]);
+    expect(e.log.join('')).toBe('One [1]. Two.');
   });
 
   it('still shows every sentence when speech fails, and keeps going', async () => {
@@ -366,8 +366,8 @@ describe('runTurn', () => {
     };
     const e = events();
     const result = await runTurn({ llm, search: async () => [], hasSelectedDocuments: false }, 'q', [], opts(true), e);
-    expect(e.log).toEqual(['One. ']);
-    expect(e.paced).toEqual(['Two.']);
+    expect(e.log.join('')).toBe('One. Two.');
+    expect(e.paced).toEqual([]);
     expect(result.text).toBe('One. Two.');
   });
 

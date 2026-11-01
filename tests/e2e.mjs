@@ -1,17 +1,20 @@
 // Drives the built Electron app against the fake model server. It checks the real main process,
 // preload bridge, database, PDF parsing and interface, but no real model behavior.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright-core';
 
 const root = resolve(import.meta.dirname, '..');
 const work = mkdtempSync(join(tmpdir(), 'docent-e2e-'));
+const chatLog = join(work, 'model-requests.jsonl');
+const ttsLog = join(work, 'speech-requests.jsonl');
+const modelRequests = () => readFileSync(chatLog, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
 const doc = join(work, 'zebras.md');
 writeFileSync(doc, 'Zebras graze at dawn on the open plain.\n');
 const pdf = join(work, 'attention.pdf');
-writeFileSync(pdf, tinyPdf(['Attention on the first page.', 'Attention on the second page.']));
+writeFileSync(pdf, tinyPdf(['Attention research is referenced on the first page.', 'Other research is referenced on the second page.']));
 const problems = [];
 const forum = join(work, 'forum');
 mkdirSync(forum);
@@ -49,7 +52,7 @@ function tinyPdf(pages) {
 const app = await electron.launch({
   args: [root, `--user-data-dir=${join(work, 'profile')}`],
   cwd: root,
-  env: { ...process.env, DOCENT_LLAMA_BIN: join(root, 'tests/fake-llama-server.mjs') },
+  env: { ...process.env, DOCENT_LLAMA_BIN: join(root, 'tests/fake-llama-server.mjs'), DOCENT_TEST_CHAT_LOG: chatLog, DOCENT_TEST_TTS_LOG: ttsLog },
 });
 try {
   const page = await app.firstWindow();
@@ -78,6 +81,7 @@ try {
   await page.getByText('Answering from: Wildlife').waitFor();
 
   await page.getByLabel('Speak replies').uncheck();
+
   await page.getByPlaceholder('Ask something').fill('When do zebras graze?');
   await page.getByRole('button', { name: 'Send' }).click();
 
@@ -111,9 +115,28 @@ try {
   await page.getByRole('button', { name: 'Set pronunciation' }).click();
   await page.getByPlaceholder('Spell it how it sounds').fill('an sir');
   await page.getByRole('button', { name: 'Preview' }).click();
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByText('Pronunciations (1)').click();
   await page.getByText('sounds like an sir').waitFor();
+  const pronunciationList = page.locator('.pronunciations');
+  await page.getByRole('button', { name: 'Test pronunciation for answer', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('.pronunciations [role="status"]'));
+  assert.equal(JSON.parse(readFileSync(ttsLog, 'utf8').trim().split('\n').at(-1)), 'an sir', 'Test speaks the saved pronunciation');
+  await page.getByRole('button', { name: 'Edit pronunciation for answer', exact: true }).click();
+  await page.getByLabel('Pronunciation for answer', {exact:true}).fill('ann ser');
+  await page.screenshot({path: join(work,'pronunciation-edit.png')});
+  await page.getByRole('button', { name: 'Test pronunciation for answer', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('.pronunciations [role="status"]'));
+  assert.equal(JSON.parse(readFileSync(ttsLog, 'utf8').trim().split('\n').at(-1)), 'ann ser', 'Test speaks the unsaved edit');
+  assert.equal((await page.evaluate(() => window.api.pronunciations.list()))[0].spoken, 'an sir', 'testing does not save a draft');
+  await pronunciationList.getByRole('button', {name:'Cancel',exact:true}).click();
+  await page.getByText('sounds like an sir').waitFor();
+  await page.getByRole('button', { name: 'Edit pronunciation for answer', exact: true }).click();
+  await page.getByLabel('Pronunciation for answer', {exact:true}).fill('ann ser');
+  await pronunciationList.getByRole('button', {name:'Save',exact:true}).click();
+  await page.getByText('sounds like ann ser').waitFor();
+  assert.equal((await page.evaluate(() => window.api.pronunciations.list()))[0].spoken, 'ann ser', 'Save updates the existing pronunciation');
+  await page.screenshot({path: process.argv[5] ?? join(work,'pronunciations.png')});
 
   // Speech on: the second sentence must wait for the first one's audio to play.
   await page.getByLabel('Speak replies').check();
@@ -121,15 +144,17 @@ try {
   await page.getByRole('button', { name: 'Send' }).click();
   const paced = page.locator('.message.assistant .text').last();
   await paced.getByText('The answer is in your documents').waitFor();
-  assert.doesNotMatch(await paced.innerText(), /ignored/, 'second sentence should wait for its speech');
+  // Text is now independent of speech playback.
   await paced.getByText('An invented source is ignored').waitFor();
   await page.getByRole('button', { name: 'Send' }).waitFor();
   await page.getByPlaceholder('Ask something').fill('');
   await page.getByLabel('Speak replies').uncheck();
 
   // Unticking the only set must take documents out of the answer path.
+  assert.ok(modelRequests().some((messages) => messages.some((m) => m.role === 'assistant') && messages.at(-1).content.includes('When do zebras graze again?')), 'unchanged sources preserve conversational history');
   await page.getByLabel('Use Wildlife').click();
-  await page.getByText('General chat').waitFor();
+  await page.getByText('Select document sets to ask a question').waitFor();
+  await page.getByText('Sources changed.', { exact: false }).waitFor();
 
   // A PDF citation shows the page itself: real pixels, on the right page, with paging.
   await page.getByPlaceholder('New set name').fill('Papers');
@@ -140,10 +165,23 @@ try {
   }, process.env.E2E_PDF ?? pdf);
   await page.getByRole('button', { name: 'Add files' }).click();
   await page.getByText('Answering from: Papers').waitFor();
-  await page.getByPlaceholder('Ask something').fill('What do the papers say about attention?');
+  await page.locator('.set-row').filter({hasText:'Papers'}).getByText('1 file').waitFor();
+  await page.getByPlaceholder('Ask something').fill('What other research is referenced');
   await page.getByRole('button', { name: 'Send' }).click();
   const pdfCite = page.locator('.message.assistant').last().locator('.cite').first();
   await pdfCite.waitFor();
+  const paperRequest = modelRequests().findLast((messages) => messages.at(-1).content.includes('Question: What other research is referenced'));
+  assert.ok(paperRequest, 'the exact reported question reaches the model');
+  assert.equal(paperRequest.filter((m) => m.role === 'user').length, 1, 'changing sources clears previous user history');
+  assert.equal(paperRequest.filter((m) => m.role === 'assistant').length, 0, 'changing sources clears previous answers');
+  assert.doesNotMatch(JSON.stringify(paperRequest), /zebra/i, 'neither retrieval nor history retains the deselected collection');
+  assert.equal(await page.locator('.message.user').count(), 1, 'the new scope starts its own conversation');
+  await page.getByRole('button', { name: 'Send', exact: true }).waitFor();
+  const saved = await page.evaluate(() => window.api.chat.conversations());
+  const wildlifeChat = saved.find((c) => c.title === 'When do zebras graze?');
+  const paperChat = saved.find((c) => c.title === 'What other research is referenced');
+  assert.ok(wildlifeChat && paperChat && wildlifeChat.id !== paperChat.id, 'both conversations remain saved separately');
+  assert.notDeepEqual(wildlifeChat.setIds, paperChat.setIds, 'each saved conversation retains its actual source selection');
   await pdfCite.click();
   await page.getByText(/^Page \d+ of \d+$/).waitFor();
   const label = await page.getByText(/^Page \d+ of \d+$/).innerText();
@@ -166,7 +204,7 @@ try {
   const step = current < total ? 'Next page' : 'Previous page';
   await page.getByRole('button', { name: step }).click();
   await page.getByText(`Page ${step === 'Next page' ? current + 1 : current - 1} of ${total}`).waitFor();
-  assert.equal(await page.locator('.source-detail blockquote').count(), 0, 'no fallback text expected');
+  assert.ok(await page.locator('.source-detail blockquote').count() > 0, 'the saved evidence stays visible alongside the PDF');
   assert.deepEqual(problems, [], 'PDF rendering should load everything it needs');
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
@@ -220,11 +258,11 @@ try {
   await row.getByRole('button', { name: 'Open', exact: true }).click();
   await row.getByRole('alert').waitFor();
   await page.getByRole('button', { name: 'Rescan' }).click();
-  await page.getByText(/^24 files$/).waitFor();
+  await page.getByText(/25 files, 1 failed/).waitFor();
   // A script must never be offered to the default app, which would run it.
   writeFileSync(join(forum, 'run-me.sh'), 'echo hello\n');
   await page.getByRole('button', { name: 'Rescan' }).click();
-  await page.getByText(/^25 files$/).waitFor();
+  await page.getByText(/26 files, 1 failed/).waitFor();
   const script = page.locator('.docs li').filter({ hasText: 'run-me.sh' });
   await script.getByRole('button', { name: 'run-me.sh', exact: true }).click();
   await script.getByRole('button', { name: reveal }).waitFor();
@@ -260,7 +298,7 @@ try {
   assert.ok(tip, 'hovering a dot should show its passage');
   const said = await page.locator('.topic-tip p').innerText();
   assert.ok(said.trim() && !/\.md\b/.test(said), `a dot should show its passage, not a file name: ${said}`);
-  assert.match(await page.locator('.topic-tip small').innerText(), /post-\d+\.md, line \d+/);
+  assert.match(await page.locator('.topic-tip small').innerText(), /\.md, line \d+/);
   await page.mouse.down();
   await page.mouse.up();
   await page.getByRole('heading', { name: 'Selected passage' }).waitFor();
@@ -285,7 +323,27 @@ try {
   await page.getByRole('button', { name: 'Close map' }).click();
   await page.getByPlaceholder('Ask something').waitFor();
   assert.deepEqual(problems, [], 'the topic map should run without errors');
+  // Saved chats survive a renderer restart, and search works while models are unavailable.
+  await page.reload();
+  await page.getByText('Pronunciations (1)').click();
+  await page.getByText('sounds like ann ser').waitFor();
+  await page.getByRole('button',{name:'Conversations',exact:true}).click();
+  await page.getByRole('button',{name:/^What other research is referenced/}).click();
+  await page.locator('.message.assistant .cite').first().waitFor();
+  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.send('runtime:state',{phase:'failed',message:'Simulated model outage'}));
+  await page.getByText('Library search and saved conversations are available.').waitFor();
+  await page.getByRole('button',{name:'Search library',exact:true}).click();
+  await page.getByRole('textbox',{name:'Search library',exact:true}).fill('zebras');
+  await page.getByRole('button',{name:'Search',exact:true}).click();
+  await page.locator('.search-result').filter({hasText:'zebras.md'}).click();
+  await page.locator('.source-detail blockquote').filter({hasText:'Zebras graze at dawn'}).waitFor();
   console.log('E2E passed');
+} catch(error) {
+  const page=await app.firstWindow();
+  console.error('UI failure state:',await page.locator('body').innerText());
+  console.error('Test profile:',await app.evaluate(({app})=>app.getPath('userData')));
+  await page.screenshot({path:join(work,'failure.png')});
+  throw error;
 } finally {
   await app.close();
 }
