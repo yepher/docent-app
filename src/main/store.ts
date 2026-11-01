@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { DocSet, DocumentRow, Pronunciation } from '../shared/types';
+import type { DocSet, DocumentRow, Pronunciation, TopicMap } from '../shared/types';
 import type { Chunk } from './ingest/chunk';
+import { isCommonWord } from './topics';
 
 export interface StoredChunk {
   id: number;
@@ -16,7 +17,24 @@ export interface StoredChunk {
 export interface VectorRows {
   ids: number[];
   vectors: Float32Array[];
+  /** The set each vector belongs to. */
+  sets: number[];
 }
+
+export interface PassageRow {
+  id: number;
+  documentId: number;
+  title: string;
+  page: number | null;
+  line: number | null;
+  vector: Float32Array;
+}
+
+const toVector = (embedding: Uint8Array): Float32Array => {
+  // Copy: the driver's buffer may not be aligned for floats.
+  const bytes = embedding.slice();
+  return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+};
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sets (
@@ -51,6 +69,13 @@ CREATE TABLE IF NOT EXISTS pronunciations (
   word TEXT PRIMARY KEY COLLATE NOCASE,
   spoken TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS topic_maps (
+  set_id INTEGER PRIMARY KEY REFERENCES sets(id) ON DELETE CASCADE,
+  fingerprint TEXT NOT NULL,
+  map TEXT NOT NULL,
+  centroids BLOB NOT NULL,
+  dimensions INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS chunks_document ON chunks(document_id);
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
   text, content='chunks', content_rowid='id', tokenize='unicode61'
@@ -76,6 +101,10 @@ export class Store {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
+    const columns = this.db.prepare('PRAGMA table_info(documents)').all() as unknown as { name: string }[];
+    if (!columns.some((c) => c.name === 'parser_version')) {
+      this.db.exec('ALTER TABLE documents ADD COLUMN parser_version INTEGER NOT NULL DEFAULT 1');
+    }
   }
 
   close() {
@@ -143,24 +172,37 @@ export class Store {
     return row?.path ?? null;
   }
 
+  documentSet(id: number): number | null {
+    const row = this.db.prepare('SELECT set_id FROM documents WHERE id = ?').get(id) as { set_id: number } | undefined;
+    return row?.set_id ?? null;
+  }
+
   /** True when this exact version of the file is already indexed without error. */
-  isCurrent(setId: number, path: string, mtimeMs: number, size: number): boolean {
+  isCurrent(setId: number, path: string, mtimeMs: number, size: number, parserVersion: number): boolean {
     const row = this.db
-      .prepare('SELECT 1 FROM documents WHERE set_id = ? AND path = ? AND mtime_ms = ? AND size = ? AND error IS NULL')
-      .get(setId, path, mtimeMs, size);
+      .prepare(
+        `SELECT 1 FROM documents
+         WHERE set_id = ? AND path = ? AND mtime_ms = ? AND size = ? AND parser_version = ? AND error IS NULL`,
+      )
+      .get(setId, path, mtimeMs, size, parserVersion);
     return row !== undefined;
   }
 
+  /** True when some of a set's files were read by an older version of the parser. */
+  needsReindex(setId: number, parserVersion: number): boolean {
+    return this.db.prepare('SELECT 1 FROM documents WHERE set_id = ? AND parser_version < ? LIMIT 1').get(setId, parserVersion) !== undefined;
+  }
+
   saveDocument(
-    doc: { setId: number; path: string; title: string; mtimeMs: number; size: number },
+    doc: { setId: number; path: string; title: string; mtimeMs: number; size: number; parserVersion: number },
     chunks: (Chunk & { embedding: Float32Array })[],
     error: string | null = null,
   ) {
     this.transaction(() => {
       this.db.prepare('DELETE FROM documents WHERE set_id = ? AND path = ?').run(doc.setId, doc.path);
       const { lastInsertRowid } = this.db
-        .prepare('INSERT INTO documents(set_id, path, title, mtime_ms, size, error) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(doc.setId, doc.path, doc.title, doc.mtimeMs, doc.size, error);
+        .prepare('INSERT INTO documents(set_id, path, title, mtime_ms, size, error, parser_version) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(doc.setId, doc.path, doc.title, doc.mtimeMs, doc.size, error, doc.parserVersion);
       const insert = this.db.prepare('INSERT INTO chunks(document_id, text, page, line, embedding) VALUES (?, ?, ?, ?, ?)');
       for (const c of chunks) {
         const blob = new Uint8Array(c.embedding.buffer, c.embedding.byteOffset, c.embedding.byteLength);
@@ -179,38 +221,124 @@ export class Store {
   }
 
   vectors(setIds: number[]): VectorRows {
-    if (setIds.length === 0) return { ids: [], vectors: [] };
+    if (setIds.length === 0) return { ids: [], vectors: [], sets: [] };
     const rows = this.db
       .prepare(
-        `SELECT c.id, c.embedding FROM chunks c JOIN documents d ON d.id = c.document_id
+        `SELECT c.id, c.embedding, d.set_id AS setId FROM chunks c JOIN documents d ON d.id = c.document_id
          WHERE d.set_id IN (${placeholders(setIds)})`,
       )
-      .all(...setIds) as unknown as { id: number; embedding: Uint8Array }[];
-    return {
-      ids: rows.map((r) => r.id),
-      vectors: rows.map((r) => {
-        // Copy: the driver's buffer may not be aligned for floats.
-        const bytes = r.embedding.slice();
-        return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
-      }),
-    };
+      .all(...setIds) as unknown as { id: number; embedding: Uint8Array; setId: number }[];
+    return { ids: rows.map((r) => r.id), vectors: rows.map((r) => toVector(r.embedding)), sets: rows.map((r) => r.setId) };
+  }
+
+  passages(setId: number): PassageRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT c.id, c.document_id AS documentId, d.title, c.page, c.line, c.embedding
+         FROM chunks c JOIN documents d ON d.id = c.document_id WHERE d.set_id = ? ORDER BY c.id`,
+      )
+      .all(setId) as unknown as (Omit<PassageRow, 'vector'> & { embedding: Uint8Array })[];
+    return rows.map(({ embedding, ...r }) => ({ ...r, vector: toVector(embedding) }));
+  }
+
+  chunkTexts(ids: number[]): Map<number, string> {
+    const select = this.db.prepare('SELECT text FROM chunks WHERE id = ?');
+    return new Map(ids.flatMap((id) => {
+      const row = select.get(id) as { text: string } | undefined;
+      return row ? [[id, row.text] as const] : [];
+    }));
+  }
+
+  /** Changes whenever a set's passages do. Includes file versions because SQLite reuses the ids of deleted rows. */
+  passageFingerprint(setId: number): string {
+    const row = this.db
+      .prepare(
+        `SELECT count(*) AS total, coalesce(max(c.id), 0) AS newest, total(d.mtime_ms + d.parser_version) AS version
+         FROM chunks c JOIN documents d ON d.id = c.document_id WHERE d.set_id = ?`,
+      )
+      .get(setId) as { total: number; newest: number; version: number };
+    return `${row.total}:${row.newest}:${row.version}`;
+  }
+
+  topicFingerprint(setId: number): string | null {
+    const row = this.db.prepare('SELECT fingerprint FROM topic_maps WHERE set_id = ?').get(setId) as { fingerprint: string } | undefined;
+    return row?.fingerprint ?? null;
+  }
+
+  saveTopicMap(setId: number, fingerprint: string, map: Omit<TopicMap, 'setId'>, centroids: Float32Array, dimensions: number) {
+    const blob = new Uint8Array(centroids.buffer, centroids.byteOffset, centroids.byteLength);
+    this.db
+      .prepare(
+        `INSERT INTO topic_maps(set_id, fingerprint, map, centroids, dimensions) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(set_id) DO UPDATE SET fingerprint = excluded.fingerprint, map = excluded.map,
+           centroids = excluded.centroids, dimensions = excluded.dimensions`,
+      )
+      .run(setId, fingerprint, JSON.stringify(map), blob, dimensions);
+  }
+
+  updateTopicMap(map: TopicMap) {
+    this.db.prepare('UPDATE topic_maps SET map = ? WHERE set_id = ?').run(JSON.stringify(map), map.setId);
+  }
+
+  removeTopicMap(setId: number) {
+    this.db.prepare('DELETE FROM topic_maps WHERE set_id = ?').run(setId);
+  }
+
+  topicMap(setId: number): TopicMap | null {
+    const row = this.db.prepare('SELECT map FROM topic_maps WHERE set_id = ?').get(setId) as { map: string } | undefined;
+    return row ? { setId, ...(JSON.parse(row.map) as Omit<TopicMap, 'setId'>) } : null;
   }
 
   keywordSearch(setIds: number[], query: string, limit: number): number[] {
-    const terms = query.match(/[\p{L}\p{N}]+/gu)?.filter((t) => t.length > 1) ?? [];
+    // Words like "what" and "the" match nearly everything and would only slow the search.
+    const terms = query.match(/[\p{L}\p{N}]+/gu)?.filter((t) => t.length > 1 && !isCommonWord(t)) ?? [];
     if (terms.length === 0 || setIds.length === 0) return [];
     // Quoting makes every term a literal, so user text cannot act as FTS syntax.
     const match = terms.map((t) => `"${t}"`).join(' OR ');
     const rows = this.db
       .prepare(
+        // CROSS JOIN fixes the order. Left to choose, SQLite searches the index once per document.
         `SELECT c.id FROM chunks_fts f
-         JOIN chunks c ON c.id = f.rowid
-         JOIN documents d ON d.id = c.document_id
+         CROSS JOIN chunks c ON c.id = f.rowid
+         CROSS JOIN documents d ON d.id = c.document_id
          WHERE chunks_fts MATCH ? AND d.set_id IN (${placeholders(setIds)})
          ORDER BY bm25(chunks_fts) LIMIT ?`,
       )
       .all(match, ...setIds, limit) as unknown as { id: number }[];
     return rows.map((r) => r.id);
+  }
+
+  documentTotal(setIds: number[]): number {
+    if (setIds.length === 0) return 0;
+    const row = this.db
+      .prepare(`SELECT count(*) AS total FROM documents WHERE error IS NULL AND set_id IN (${placeholders(setIds)})`)
+      .get(...setIds) as { total: number };
+    return row.total;
+  }
+
+  /** The document each passage in these sets belongs to. */
+  chunkDocuments(setIds: number[]): Map<number, number> {
+    if (setIds.length === 0) return new Map();
+    const rows = this.db
+      .prepare(
+        `SELECT c.id, c.document_id AS documentId FROM chunks c JOIN documents d ON d.id = c.document_id
+         WHERE d.set_id IN (${placeholders(setIds)})`,
+      )
+      .all(...setIds) as unknown as { id: number; documentId: number }[];
+    return new Map(rows.map((r) => [r.id, r.documentId]));
+  }
+
+  /** What is needed to place a passage in a set's topics. */
+  topicIndex(setId: number): { labels: string[]; centroids: Float32Array; dimensions: number } | null {
+    const row = this.db.prepare('SELECT map, centroids, dimensions FROM topic_maps WHERE set_id = ?').get(setId) as
+      | { map: string; centroids: Uint8Array; dimensions: number }
+      | undefined;
+    if (!row) return null;
+    const { topics } = JSON.parse(row.map) as TopicMap;
+    // A name several topics share tells them apart no better than having no name.
+    const shared = (label: string) => topics.filter((t) => t.label === label).length > 1;
+    const labels = topics.map((t) => (shared(t.label) ? t.keywords.slice(0, 3).join(', ') : t.label));
+    return { labels, centroids: toVector(row.centroids), dimensions: row.dimensions };
   }
 
   chunksById(ids: number[]): StoredChunk[] {

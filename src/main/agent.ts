@@ -1,11 +1,14 @@
 import type { ChatTurn, Citation } from '../shared/types';
 import { SentenceSplitter, type SpeechPart, resolveCitations } from './citations';
 import type { ChatMessage, Llm, ToolCall, ToolDefinition } from './llm';
+import type { Survey } from './retrieval';
 import type { StoredChunk } from './store';
 
 const MAX_ROUNDS = 3;
 const HISTORY_TURNS = 6;
 const EXCERPT_CHARS = 400;
+/** This many identical lines in a row means the model is stuck repeating itself. */
+const MAX_REPEATED_LINES = 3;
 
 export const NO_MATCH =
   'I could not find anything about that in the selected document sets, so I do not want to guess.';
@@ -39,6 +42,8 @@ export interface AgentDeps {
   llm: Llm;
   search: (query: string) => Promise<StoredChunk[]>;
   hasSelectedDocuments: boolean;
+  /** Finds what people ask for or complain about across a collection. */
+  survey?: (question: string) => Survey | null;
   /** Applies the user's custom pronunciations to text about to be spoken. */
   pronounce?: (text: string) => string;
 }
@@ -68,11 +73,45 @@ function formatSources(sources: Map<number, { n: number; chunk: StoredChunk }>, 
     .join('\n\n');
 }
 
+const SURVEY_NOUNS = { requests: 'requests', complaints: 'complaints', problems: 'reports of problems' };
+
+/** Written here, not by the model, so the counts and quotes are exactly what was found. */
+function formatSurvey(survey: Survey, numberOf: (chunkId: number) => number): string {
+  const noun = SURVEY_NOUNS[survey.kind];
+  const quote = (q: Survey['groups'][number]['quotes'][number]) => `"${q.sentence}" [${numberOf(q.chunk.id)}]`;
+  const grouped = survey.groups.some((g) => g.label !== null);
+  const body = grouped
+    ? survey.groups.map(
+        (g, i) => `${i + 1}. **${g.label}**, ${g.documents} documents\n${g.quotes.map((q) => `   - ${quote(q)}`).join('\n')}`,
+      )
+    : survey.groups.flatMap((g) => g.quotes.map((q) => `- ${quote(q)}`));
+  return [
+    `I can't name a single top one, because that would mean reading and tallying each one. I found ${noun} in ${survey.documents} of ${survey.total} documents.`,
+    grouped ? 'These are the topics they come up in most, with examples in people\'s own words:' : 'Here are some in people\'s own words:',
+    body.join('\n'),
+  ].join('\n\n');
+}
+
+/** True once a reply ends in the same line several times, as "1. x", "2. x", "3. x". */
+function isRepeating(text: string): boolean {
+  const lines = text.split('\n').slice(0, -1).map((l) => l.replace(/^\s*\d+[.)]\s*/, '').trim()).filter(Boolean);
+  const last = lines.slice(-MAX_REPEATED_LINES);
+  return last.length === MAX_REPEATED_LINES && new Set(last).size === 1;
+}
+
 /** A short follow-up such as "and the second one?" says little alone, so it borrows the last question. */
 function retrievalQuery(text: string, history: ChatTurn[]): string {
   if (text.trim().split(/\s+/).length >= 6) return text;
   const previous = history.findLast((t) => t.role === 'user');
   return previous ? `${previous.content} ${text}` : text;
+}
+
+const BROAD_QUESTION =
+  /\b(most|least|top|biggest|main|common|commonly|frequent|frequently|often|popular|recurring|overall|overview|summari[sz]e|themes?|trends?|patterns?|how many|(what|which)\b.{0,20}\b(people|users|customers))\b/i;
+
+/** Questions about a whole collection, which a few matching passages cannot answer. */
+export function isBroadQuestion(question: string): boolean {
+  return BROAD_QUESTION.test(question);
 }
 
 function parseQuery(call: ToolCall): string | null {
@@ -135,13 +174,38 @@ export async function runTurn(
     return firstNew;
   };
 
+  const finish = (text: string): TurnResult => {
+    const resolved = resolveCitations(text, sources.size);
+    const citations: Citation[] = [...sources.values()].map(({ n, chunk }) => ({
+      n,
+      documentId: chunk.documentId,
+      title: chunk.title,
+      path: chunk.path,
+      setName: chunk.setName,
+      page: chunk.page,
+      line: chunk.line,
+      excerpt: chunk.text.slice(0, EXCERPT_CHARS),
+      cited: resolved.cited.has(n),
+    }));
+    return { text: resolved.text, citations, uncited: sources.size > 0 && resolved.cited.size === 0 };
+  };
+
   const prior = history.slice(-HISTORY_TURNS).map((t): ChatMessage => ({ role: t.role, content: t.content }));
   const messages: ChatMessage[] = [];
 
   if (hasSelectedDocuments) {
     // Retrieval always runs. A small model cannot be relied on to choose to search.
     events.status('Searching your documents');
-    addSources(await search(retrievalQuery(question, history)));
+    const query = retrievalQuery(question, history);
+    const survey = isBroadQuestion(question) ? deps.survey?.(question) : null;
+    if (survey) {
+      addSources(survey.groups.flatMap((g) => g.quotes.map((q) => q.chunk)));
+      const text = formatSurvey(survey, (id) => sources.get(id)!.n);
+      if (speaker) await speaker(splitter.push(text).concat(splitter.flush()));
+      else events.delta(text);
+      return finish(text);
+    }
+    addSources(await search(query));
     if (sources.size === 0) {
       if (speaker) await speaker(splitter.push(NO_MATCH).concat(splitter.flush()));
       else events.delta(NO_MATCH);
@@ -150,7 +214,10 @@ export async function runTurn(
     messages.push(
       { role: 'system', content: RAG_PROMPT },
       ...prior,
-      { role: 'user', content: `Sources:\n\n${formatSources(sources, 1)}\n\nQuestion: ${question}` },
+      {
+        role: 'user',
+        content: `Sources:\n\n${formatSources(sources, 1)}\n\nQuestion: ${question}`,
+      },
     );
   } else {
     messages.push({ role: 'system', content: CHAT_PROMPT }, ...prior, { role: 'user', content: question });
@@ -174,6 +241,7 @@ export async function runTurn(
         answer += delta.text;
         if (speaker) void speaker(splitter.push(delta.text));
         else events.delta(delta.text);
+        if (isRepeating(roundText)) break;
       }
     }
     if (calls.length === 0) break;
@@ -195,17 +263,5 @@ export async function runTurn(
 
   if (speaker) await speaker(splitter.flush());
 
-  const resolved = resolveCitations(answer, sources.size);
-  const citations: Citation[] = [...sources.values()].map(({ n, chunk }) => ({
-    n,
-    documentId: chunk.documentId,
-    title: chunk.title,
-    path: chunk.path,
-    setName: chunk.setName,
-    page: chunk.page,
-    line: chunk.line,
-    excerpt: chunk.text.slice(0, EXCERPT_CHARS),
-    cited: resolved.cited.has(n),
-  }));
-  return { text: resolved.text, citations, uncited: sources.size > 0 && resolved.cited.size === 0 };
+  return finish(answer);
 }

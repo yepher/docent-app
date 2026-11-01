@@ -21,7 +21,15 @@ With **Speak replies** on, each sentence appears as it is spoken.
 
 To correct how a word is said, select it in an answer and choose **Set pronunciation**. Spell it how it sounds, press **Preview** to hear it, then **Save**. It applies to all future speech, and changes only the voice, not the written answer. Manage saved words under **Pronunciations** in the sidebar.
 
+Press a file in a set to open it in its default app or show it in Finder, File Explorer or your file manager. Scripts and programs can only be shown in their folder, so opening one never runs it.
+
 Supported files: PDF, DOCX, Markdown, plain text, HTML, CSV, JSON, YAML and common source code. PDFs need a text layer; scanned pages are not read. Files stay where they are, and **Rescan** picks up changes.
+
+Questions about a whole set, such as "what do people ask for most?", are answered differently. Questions about what people most often request, complain about or report as problems are answered differently. The app finds every sentence of that kind, counts the documents they appear in by topic, and quotes people directly. It does not name a single top item, because that would need each one read and tallied.
+
+Open a set and press **Topic map** to see its subjects in 3D. Each dot is a passage, and nearby dots mean similar things. Hover a dot to read it, or click it to keep it open. Hover a topic to see its summary, typical passages and what it connects to. Two topics are connected when documents discuss both, or when passages sit between them by meaning. The local model writes topic names and summaries in the background, so they appear a little after the map.
+
+Embedded HTML and front matter in Markdown are ignored. JSON and XML files over 1 MB are treated as data exports and are not read.
 
 If nothing relevant is found, the app says so instead of guessing. If the model answers without citing, the app shows a warning and the passages it was given.
 
@@ -61,6 +69,7 @@ DOCENT_LLAMA_BIN="$PWD/tests/fake-llama-server.mjs" npm run dev
 | SQLite storage and FTS5 keyword search | `src/main/store.ts` |
 | Hybrid keyword and vector search | `src/main/retrieval.ts` |
 | Agent loop, prompts and the search tool | `src/main/agent.ts` |
+| Topics, keywords and the t-SNE layout | `src/main/topics.ts` |
 | Validates citations, prepares speech | `src/main/citations.ts` |
 | Pinned model files | `src/main/models.ts` |
 | Pinned llama.cpp build | `scripts/fetch-llama.mjs` |

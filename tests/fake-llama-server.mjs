@@ -21,6 +21,7 @@ function embed(text) {
 
 const answer = (messages) => {
   const last = String(messages.at(-1)?.content ?? '');
+  if (last.includes('Topic passages:')) return 'Name: Sample subject\nSummary: These passages share a sample subject.';
   const hasSources = /^\[1\] /m.test(last);
   return hasSources ? 'The answer is in your documents [1]. An invented source is ignored [9].' : 'Hello from the fake model.';
 };

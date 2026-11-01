@@ -4,7 +4,7 @@ import type { Embedder } from '../llm';
 import { normalize } from '../retrieval';
 import type { Store } from '../store';
 import { type Chunk, chunkSegments } from './chunk';
-import { collectFiles, parseFile, titleOf } from './parse';
+import { PARSER_VERSION, collectFiles, parseFile, titleOf } from './parse';
 
 const EMBED_BATCH = 16;
 
@@ -28,8 +28,8 @@ export async function indexSet(
   for (const path of files) {
     onProgress({ setId, done, total: files.size, current: titleOf(path) });
     const info = await stat(path);
-    if (!store.isCurrent(setId, path, info.mtimeMs, info.size)) {
-      const doc = { setId, path, title: titleOf(path), mtimeMs: info.mtimeMs, size: info.size };
+    if (!store.isCurrent(setId, path, info.mtimeMs, info.size, PARSER_VERSION)) {
+      const doc = { setId, path, title: titleOf(path), mtimeMs: info.mtimeMs, size: info.size, parserVersion: PARSER_VERSION };
       try {
         const chunks = chunkSegments(await parseFile(path));
         const embedded: (Chunk & { embedding: Float32Array })[] = [];

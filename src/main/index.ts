@@ -1,22 +1,25 @@
 import { BrowserWindow, app, dialog, ipcMain, session, shell } from 'electron';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
+import { isViewable } from '../shared/files';
 import type { ChatTurn, DocSet, RuntimeState } from '../shared/types';
 import { runTurn } from './agent';
 import { indexSet } from './ingest';
+import { PARSER_VERSION } from './ingest/parse';
 import { type Embedder, LlamaServerEmbedder, LlamaServerLlm, type Llm } from './llm';
 import { MODEL_FILES, freeBytes, installModels, isInstalled, missingBytes } from './models';
 import { applyPronunciations } from './pronunciation';
 import { Retriever } from './retrieval';
 import { Sidecar, embedderArgs, llmArgs } from './sidecar';
 import { Store } from './store';
+import { MIN_PASSAGES_FOR_TOPICS, TOPIC_MAP_VERSION, buildTopics, describeTopic } from './topics';
 import { startUpdater } from './updater';
 
 const RELEASES_URL = 'https://github.com/yepher/docent-app/releases';
-const OPENABLE = new Set(['.pdf', '.docx', '.md', '.markdown', '.txt', '.csv', '.tsv', '.rst']);
 const dev = !app.isPackaged;
 const MAX_WORD_CHARS = 60;
 const MAX_SPOKEN_CHARS = 200;
+const DESCRIBE_TIMEOUT_MS = 120_000;
 
 // Test overrides exist only in unpackaged builds, so a shipped app cannot be redirected by its environment.
 const fakeBinary = dev ? process.env.DOCENT_LLAMA_BIN : undefined;
@@ -61,6 +64,7 @@ async function startRuntime() {
     embedder = client;
     retriever = new Retriever(store, (q) => client.embedQuery(q));
     setState({ phase: 'ready' });
+    maintainLibrary();
   } catch (err) {
     setState({ phase: 'failed', message: err instanceof Error ? err.message : String(err) });
   }
@@ -80,15 +84,64 @@ function requireWindow(): BrowserWindow {
   return window;
 }
 
-function reindex(setId: number) {
+/** Rebuilds a set's topics if its passages changed. Slow on large sets, so it yields as it works. */
+async function updateTopics(setId: number) {
+  const fingerprint = `${TOPIC_MAP_VERSION}:${store.passageFingerprint(setId)}`;
+  if (store.topicFingerprint(setId) !== fingerprint) {
+    const passages = store.passages(setId);
+    if (passages.length < MIN_PASSAGES_FOR_TOPICS) return store.removeTopicMap(setId);
+    const { map, centroids } = await buildTopics(
+      passages,
+      (ids) => store.chunkTexts(ids),
+      (stage) => send('sets:progress', { setId, done: 1, total: 1, current: stage }),
+    );
+    store.saveTopicMap(setId, fingerprint, map, centroids, passages[0]!.vector.length);
+    send('topics:changed', setId);
+  }
+  await describeTopics(setId);
+}
+
+/**
+ * Names topics one at a time and saves each, so quitting partway loses nothing and the map
+ * improves as it goes. Topics already described are skipped, including after a restart.
+ */
+async function describeTopics(setId: number) {
+  const map = store.topicMap(setId);
+  if (!llm || !map) return;
+  const waiting = map.topics.filter((t) => t.summary === null);
+  for (const [i, topic] of waiting.entries()) {
+    send('sets:progress', { setId, done: i, total: waiting.length, current: `Describing topics, ${i + 1} of ${waiting.length}` });
+    const description = await describeTopic(llm, topic, AbortSignal.timeout(DESCRIBE_TIMEOUT_MS));
+    if (!description) continue;
+    topic.label = description.name;
+    topic.summary = description.summary;
+    store.updateTopicMap(map);
+    send('topics:changed', setId);
+  }
+}
+
+function queueLibraryWork(work: () => Promise<void>) {
   ingest = ingest
-    .then(async () => {
-      if (!embedder) throw new Error('The embedding model is not running.');
-      await indexSet(store, embedder, setId, (p) => send('sets:progress', p));
-    })
+    .then(work)
     .catch((err) => console.error('Indexing failed', err))
     .finally(() => send('sets:progress', null));
   return ingest;
+}
+
+function reindex(setId: number) {
+  return queueLibraryWork(async () => {
+    if (!embedder) throw new Error('The embedding model is not running.');
+    await indexSet(store, embedder, setId, (p) => send('sets:progress', p));
+    await updateTopics(setId);
+  });
+}
+
+/** Brings every set up to date at launch: files read by an older parser, then missing topics. */
+function maintainLibrary() {
+  for (const set of store.listSets()) {
+    if (store.needsReindex(set.id, PARSER_VERSION)) void reindex(set.id);
+    else void queueLibraryWork(() => updateTopics(set.id));
+  }
 }
 
 function registerIpc(update: { install(): void }) {
@@ -108,7 +161,12 @@ function registerIpc(update: { install(): void }) {
   ipcMain.handle('sets:remove', (_e, id: number) => store.removeSet(id));
   ipcMain.handle('sets:select', (_e, id: number, selected: boolean) => store.selectSet(id, selected));
   ipcMain.handle('sets:documents', (_e, id: number) => store.documents(id));
-  ipcMain.handle('sets:removeDocument', (_e, id: number) => store.removeDocument(id));
+  ipcMain.handle('sets:removeDocument', (_e, id: number) => {
+    const setId = store.documentSet(id);
+    store.removeDocument(id);
+    if (setId !== null) void queueLibraryWork(() => updateTopics(setId));
+  });
+  ipcMain.handle('topics:get', (_e, setId: number) => store.topicMap(setId));
   ipcMain.handle('sets:rescan', (_e, id: number) => reindex(id));
 
   const pick = async (id: number, property: 'openFile' | 'openDirectory') => {
@@ -142,6 +200,7 @@ function registerIpc(update: { install(): void }) {
           {
             llm,
             search: (q) => search.search(setIds, q),
+            survey: (question) => search.survey(setIds, question),
             hasSelectedDocuments: hasDocuments,
             // Read per sentence, so a new pronunciation applies from the next sentence on.
             pronounce: (t) => applyPronunciations(t, store.pronunciations()),
@@ -189,11 +248,25 @@ function registerIpc(update: { install(): void }) {
 
   // Only files already in the index can be opened, and only types that open in a viewer.
   // Anything else, such as a script, is revealed in its folder rather than run.
-  ipcMain.handle('docs:open', async (_e, id: number) => {
+  const existingPath = async (id: number) => {
     const path = store.documentPath(id);
-    if (!path) return;
-    if (OPENABLE.has(extname(path).toLowerCase())) await shell.openPath(path);
-    else shell.showItemInFolder(path);
+    if (!path) return null;
+    return access(path).then(
+      () => path,
+      () => null,
+    );
+  };
+  ipcMain.handle('docs:open', async (_e, id: number) => {
+    const path = await existingPath(id);
+    if (!path) return false;
+    if (isViewable(path)) return (await shell.openPath(path)) === '';
+    shell.showItemInFolder(path);
+    return true;
+  });
+  ipcMain.handle('docs:reveal', async (_e, id: number) => {
+    const path = await existingPath(id);
+    if (path) shell.showItemInFolder(path);
+    return path !== null;
   });
 
   // Same rule as above: the renderer names an indexed document and never a path.

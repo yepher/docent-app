@@ -8,6 +8,7 @@ function subscribe<T>(channel: string, cb: (value: T) => void) {
 }
 
 const api: Api = {
+  platform: process.platform,
   runtime: {
     state: () => ipcRenderer.invoke('runtime:state'),
     install: () => ipcRenderer.invoke('runtime:install'),
@@ -24,6 +25,8 @@ const api: Api = {
     rescan: (id) => ipcRenderer.invoke('sets:rescan', id),
     documents: (id) => ipcRenderer.invoke('sets:documents', id),
     removeDocument: (id) => ipcRenderer.invoke('sets:removeDocument', id),
+    topics: (id) => ipcRenderer.invoke('topics:get', id),
+    onTopicsChanged: (cb) => subscribe('topics:changed', cb),
     onProgress: (cb) => subscribe('sets:progress', cb),
   },
   chat: {
@@ -40,6 +43,7 @@ const api: Api = {
   },
   docs: {
     open: (id) => ipcRenderer.invoke('docs:open', id),
+    reveal: (id) => ipcRenderer.invoke('docs:reveal', id),
     pdf: (id) => ipcRenderer.invoke('docs:pdf', id),
   },
   update: {

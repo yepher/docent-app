@@ -67,6 +67,52 @@ export type UpdateState =
   | { status: 'ready'; version: string }
   | { status: 'error'; message: string };
 
+export interface TopicLink {
+  topic: number;
+  /** Documents with passages in both topics. */
+  sharedDocuments: number;
+  /** Passages that sit between the two topics by meaning. */
+  passages: number;
+}
+
+export interface TopicPassage {
+  documentId: number;
+  title: string;
+  page: number | null;
+  line: number | null;
+  /** The start of the passage, tidied for reading. */
+  snippet: string;
+}
+
+export interface Topic {
+  id: number;
+  /** A plain name from the model once it has run, keywords until then. */
+  label: string;
+  /** One sentence from the model. Null until it has run, or if it could not. */
+  summary: string | null;
+  keywords: string[];
+  /** The passages most typical of this topic. */
+  examples: TopicPassage[];
+  passageCount: number;
+  documentCount: number;
+  position: [number, number, number];
+  related: TopicLink[];
+  /** The documents with the most passages in this topic. */
+  titles: string[];
+}
+
+export interface TopicPoint extends TopicPassage {
+  position: [number, number, number];
+  topic: number;
+}
+
+export interface TopicMap {
+  setId: number;
+  topics: Topic[];
+  points: TopicPoint[];
+  passageCount: number;
+}
+
 export interface Api {
   runtime: {
     state(): Promise<RuntimeState>;
@@ -84,6 +130,8 @@ export interface Api {
     rescan(id: number): Promise<void>;
     documents(id: number): Promise<DocumentRow[]>;
     removeDocument(id: number): Promise<void>;
+    topics(id: number): Promise<TopicMap | null>;
+    onTopicsChanged(cb: (setId: number) => void): () => void;
     onProgress(cb: (p: IngestProgress | null) => void): () => void;
   };
   chat: {
@@ -98,7 +146,14 @@ export interface Api {
     remove(word: string): Promise<void>;
     preview(spoken: string): Promise<{ samples: ArrayBuffer; sampleRate: number }>;
   };
-  docs: { open(documentId: number): Promise<void>; pdf(documentId: number): Promise<ArrayBuffer> };
+  /** The operating system, for naming its file manager. */
+  platform: string;
+  docs: {
+    /** Each resolves false when the file could not be found or opened. */
+    open(documentId: number): Promise<boolean>;
+    reveal(documentId: number): Promise<boolean>;
+    pdf(documentId: number): Promise<ArrayBuffer>;
+  };
   update: {
     onState(cb: (s: UpdateState) => void): () => void;
     install(): Promise<void>;

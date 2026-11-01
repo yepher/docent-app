@@ -23,7 +23,7 @@ button {
   padding: 4px 10px; cursor: pointer;
 }
 button:hover:not(:disabled) { background: var(--panel); }
-button:disabled { opacity: .5; cursor: default; }
+button:disabled { opacity: .7; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 button.danger { color: var(--danger); }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -37,25 +37,35 @@ input:not([type='checkbox']) {
 .setup progress { width: 100%; }
 .setup pre { white-space: pre-wrap; font-size: 12px; max-width: 100%; overflow: auto; }
 
-.app { display: grid; grid-template-columns: 280px minmax(0, 1fr); height: 100%; position: relative; }
+.app { --sidebar: 280px; display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); height: 100%; position: relative; }
+.sidebar-handle {
+  position: absolute; top: 0; bottom: 0; left: calc(var(--sidebar) - 3px); width: 7px; z-index: 6;
+  cursor: col-resize; touch-action: none;
+}
+.sidebar-handle:hover, .sidebar-handle:focus-visible { background: var(--accent); outline: none; opacity: .5; }
 .sidebar {
   background: var(--panel); border-right: 1px solid var(--line); padding: 16px 12px;
-  display: flex; flex-direction: column; gap: 8px; overflow: auto;
+  display: flex; flex-direction: column; gap: 8px; overflow: hidden auto;
 }
-.sets { flex: 1; display: grid; gap: 4px; align-content: start; }
+.sets { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; align-content: start; }
 .set-row { display: flex; gap: 8px; align-items: center; }
 .set-name {
   flex: 1; min-width: 0; border: 0; text-align: left; padding: 4px 6px;
   display: flex; flex-direction: column;
 }
 .set-name:hover:not(:disabled) { background: var(--line); }
-.set-detail { margin: 4px 0 8px 26px; display: grid; gap: 6px; }
+.set-detail { margin: 4px 0 8px 26px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.docs { max-height: 40vh; overflow: hidden auto; }
 .actions { display: flex; flex-wrap: wrap; gap: 4px; }
 .actions button { padding: 2px 6px; font-size: 12px; }
 .docs li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
-.docs span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.docs span.failed { color: var(--danger); }
-.docs small { order: 3; width: 100%; }
+.docs button.doc-name {
+  flex: 1; min-width: 0; padding: 1px 4px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.docs button.doc-name.failed { color: var(--danger); }
+.docs small { width: 100%; }
+.doc-actions { width: 100%; display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 4px 6px; }
+.docs .doc-actions button { border: 1px solid var(--line); padding: 2px 6px; }
 .docs button { border: 0; padding: 0 4px; }
 .progress { margin: 4px 0 8px 26px; display: grid; }
 .progress progress { width: 100%; }
@@ -131,3 +141,34 @@ input:not([type='checkbox']) {
 .pronunciations li { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
 .pronunciations span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .pronunciations button { border: 0; padding: 0 4px; }
+
+.topic-view {
+  position: absolute; inset: 0 0 0 var(--sidebar); z-index: 5; background: var(--bg);
+  display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr) 300px;
+}
+.topic-view header {
+  grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 20px; border-bottom: 1px solid var(--line);
+}
+.topic-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.topic-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; color: var(--ink); }
+.topic-stage canvas:active { cursor: grabbing; }
+.topic-stage .fine { position: absolute; left: 16px; bottom: 10px; margin: 0; pointer-events: none; }
+.topic-tip p { margin: 0 0 4px; }
+.topic-tip small { display: block; }
+.topic-passage { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.topic-passage h4 { margin-top: 0; }
+.topic-passage blockquote { margin: 0 0 6px; padding-left: 10px; border-left: 2px solid var(--accent); }
+.topic-passage > button { margin-top: 6px; }
+.topic-tip {
+  position: absolute; max-width: 320px; z-index: 1; padding: 4px 8px; font-size: 12px; pointer-events: none;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere;
+}
+.topic-panel { border-left: 1px solid var(--line); padding: 14px; overflow: auto; }
+.topic-panel h3 { font-size: 14px; overflow-wrap: anywhere; }
+.topic-panel h4 { margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.topic-panel li { margin-bottom: 4px; overflow-wrap: anywhere; }
+.topic-panel li button { width: 100%; text-align: left; border: 0; padding: 4px 6px; }
+.topic-panel li button small { display: block; }
+.topic-panel .back { margin-bottom: 10px; }
+.topic-message { margin: auto; padding: 40px; color: var(--muted); max-width: 420px; text-align: center; grid-column: 1 / -1; }

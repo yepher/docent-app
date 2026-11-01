@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 'react';
 import type {
   Api,
   ChatTurn,
@@ -10,7 +10,9 @@ import type {
   RuntimeState,
   UpdateState,
 } from '../../shared/types';
+import { isViewable } from '../../shared/files';
 import { PdfPage } from './PdfPage';
+import { TopicMapView } from './TopicMapView';
 import { Pacer, Player, Recorder } from './audio';
 
 declare global {
@@ -39,6 +41,19 @@ interface Selected {
 
 const MAX_SELECTED_CHARS = 60;
 const POPOVER_WIDTH = 280;
+
+const SIDEBAR_KEY = 'docent.sidebarWidth';
+const SIDEBAR_DEFAULT = 280;
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 560;
+const CHAT_MIN = 400;
+const SIDEBAR_STEP = 16;
+
+const clampSidebar = (width: number) =>
+  Math.round(Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, window.innerWidth - CHAT_MIN, width)));
+
+const revealLabel =
+  api.platform === 'darwin' ? 'Show in Finder' : api.platform === 'win32' ? 'Show in File Explorer' : 'Show in folder';
 
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
 
@@ -105,19 +120,54 @@ function Setup({ state }: { state: RuntimeState }) {
 function Workspace() {
   const [sets, setSets] = useState<DocSet[]>([]);
   const [pronunciations, setPronunciations] = useState<Pronunciation[]>([]);
+  const [mapSetId, setMapSetId] = useState<number | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => clampSidebar(Number(localStorage.getItem(SIDEBAR_KEY)) || SIDEBAR_DEFAULT));
+  const resizing = useRef(false);
+  const resizeSidebar = (width: number) => {
+    const next = clampSidebar(width);
+    setSidebarWidth(next);
+    localStorage.setItem(SIDEBAR_KEY, String(next));
+  };
   const refresh = () => void api.sets.list().then(setSets);
   const refreshPronunciations = () => void api.pronunciations.list().then(setPronunciations);
   useEffect(refresh, []);
   useEffect(refreshPronunciations, []);
+  const mapSet = sets.find((s) => s.id === mapSetId);
   return (
-    <div className="app">
+    <div className="app" style={{ '--sidebar': `${sidebarWidth}px` } as CSSProperties}>
+      <div
+        className="sidebar-handle"
+        role="separator"
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={SIDEBAR_MIN}
+        aria-valuemax={SIDEBAR_MAX}
+        aria-valuenow={sidebarWidth}
+        tabIndex={0}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          resizing.current = true;
+        }}
+        onPointerMove={(e) => {
+          if (resizing.current) resizeSidebar(e.clientX);
+        }}
+        onPointerUp={() => (resizing.current = false)}
+        onPointerCancel={() => (resizing.current = false)}
+        onDoubleClick={() => resizeSidebar(SIDEBAR_DEFAULT)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') resizeSidebar(sidebarWidth - SIDEBAR_STEP);
+          if (e.key === 'ArrowRight') resizeSidebar(sidebarWidth + SIDEBAR_STEP);
+        }}
+      />
       <Sidebar
         sets={sets}
         refresh={refresh}
         pronunciations={pronunciations}
         refreshPronunciations={refreshPronunciations}
+        onShowTopics={setMapSetId}
       />
       <Chat sets={sets} pronunciations={pronunciations} refreshPronunciations={refreshPronunciations} />
+      {mapSet && <TopicMapView key={mapSet.id} set={mapSet} onClose={() => setMapSetId(null)} revealLabel={revealLabel} />}
       <UpdateBanner />
     </div>
   );
@@ -128,11 +178,13 @@ function Sidebar({
   refresh,
   pronunciations,
   refreshPronunciations,
+  onShowTopics,
 }: {
   sets: DocSet[];
   refresh: () => void;
   pronunciations: Pronunciation[];
   refreshPronunciations: () => void;
+  onShowTopics: (setId: number) => void;
 }) {
   const [progress, setProgress] = useState<IngestProgress | null>(null);
   const [openId, setOpenId] = useState<number | null>(null);
@@ -177,7 +229,7 @@ function Sidebar({
                 </small>
               </button>
             </div>
-            {openId === set.id && <SetDetail set={set} refresh={refresh} busy={progress !== null} />}
+            {openId === set.id && <SetDetail set={set} refresh={refresh} busy={progress !== null} onShowTopics={() => onShowTopics(set.id)} />}
             {progress?.setId === set.id && (
               <div className="progress">
                 <progress value={progress.done} max={Math.max(progress.total, 1)} />
@@ -221,29 +273,49 @@ function Sidebar({
   );
 }
 
-function SetDetail({ set, refresh, busy }: { set: DocSet; refresh: () => void; busy: boolean }) {
+function SetDetail({
+  set,
+  refresh,
+  busy,
+  onShowTopics,
+}: {
+  set: DocSet;
+  refresh: () => void;
+  busy: boolean;
+  onShowTopics: () => void;
+}) {
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
+  const [openDocument, setOpenDocument] = useState<number | null>(null);
   const load = () => void api.sets.documents(set.id).then(setDocuments);
+  const waitHint = busy ? 'Available when indexing finishes' : undefined;
   useEffect(load, [set.id, set.documentCount, set.failedCount, set.chunkCount]);
   return (
     <div className="set-detail">
       <div className="actions">
-        <button disabled={busy} onClick={() => void api.sets.addFiles(set.id)}>Add files</button>
-        <button disabled={busy} onClick={() => void api.sets.addFolder(set.id)}>Add folder</button>
-        <button disabled={busy} onClick={() => void api.sets.rescan(set.id)}>Rescan</button>
+        <button disabled={busy} title={waitHint} onClick={() => void api.sets.addFiles(set.id)}>Add files</button>
+        <button disabled={busy} title={waitHint} onClick={() => void api.sets.addFolder(set.id)}>Add folder</button>
+        <button disabled={busy} title={waitHint} onClick={() => void api.sets.rescan(set.id)}>Rescan</button>
+        <button disabled={set.chunkCount === 0} onClick={onShowTopics}>Topic map</button>
         <button className="danger" onClick={() => void api.sets.remove(set.id).then(refresh)}>Delete</button>
       </div>
       <ul className="docs">
         {documents.map((doc) => (
           <li key={doc.id} title={doc.error ?? doc.path}>
-            <span className={doc.error ? 'failed' : ''}>{doc.title}</span>
-            {doc.error && <small>{doc.error}</small>}
+            <button
+              className={`doc-name${doc.error ? ' failed' : ''}`}
+              aria-expanded={openDocument === doc.id}
+              onClick={() => setOpenDocument(openDocument === doc.id ? null : doc.id)}
+            >
+              {doc.title}
+            </button>
             <button
               aria-label={`Remove ${doc.title}`}
               onClick={() => void api.sets.removeDocument(doc.id).then(() => (load(), refresh()))}
             >
               ×
             </button>
+            {doc.error && <small>{doc.error}</small>}
+            {openDocument === doc.id && <DocumentActions key={doc.id} document={doc} />}
           </li>
         ))}
       </ul>
@@ -509,6 +581,18 @@ function Chat({
   );
 }
 
+function DocumentActions({ document }: { document: DocumentRow }) {
+  const [missing, setMissing] = useState(false);
+  const run = (action: Promise<boolean>) => void action.then((ok) => setMissing(!ok));
+  return (
+    <div className="doc-actions">
+      {isViewable(document.path) && <button onClick={() => run(api.docs.open(document.id))}>Open</button>}
+      <button onClick={() => run(api.docs.reveal(document.id))}>{revealLabel}</button>
+      {missing && <small role="alert">This file could not be opened. It may have moved. Rescan to update the set.</small>}
+    </div>
+  );
+}
+
 function SourceDetail({ citation, onClose }: { citation: Citation; onClose: () => void }) {
   const [pageFailed, setPageFailed] = useState(false);
   // Only PDFs have page numbers. Text pulled from a PDF is often unreadable, so show the page itself.
@@ -528,7 +612,10 @@ function SourceDetail({ citation, onClose }: { citation: Citation; onClose: () =
           <blockquote>{citation.excerpt}</blockquote>
         </>
       )}
-      <button onClick={() => void api.docs.open(citation.documentId)}>Open file</button>
+      <div className="actions">
+        <button onClick={() => void api.docs.open(citation.documentId)}>Open file</button>
+        <button onClick={() => void api.docs.reveal(citation.documentId)}>{revealLabel}</button>
+      </div>
     </aside>
   );
 }

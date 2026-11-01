@@ -11,7 +11,7 @@ jobs:
   draft:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Docent ${GITHUB_REF_NAME#v}" --notes-file .github/release-notes.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -27,8 +27,8 @@ jobs:
           - { os: windows-latest, llama: win32-x64, flags: --win --x64 }
           - { os: ubuntu-22.04, llama: linux-x64, flags: --linux --x64 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 24, cache: npm }
       - run: npm ci
       - run: npm test

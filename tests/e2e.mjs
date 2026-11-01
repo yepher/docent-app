@@ -1,7 +1,7 @@
 // Drives the built Electron app against the fake model server. It checks the real main process,
 // preload bridge, database, PDF parsing and interface, but no real model behavior.
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright-core';
@@ -13,6 +13,12 @@ writeFileSync(doc, 'Zebras graze at dawn on the open plain.\n');
 const pdf = join(work, 'attention.pdf');
 writeFileSync(pdf, tinyPdf(['Attention on the first page.', 'Attention on the second page.']));
 const problems = [];
+const forum = join(work, 'forum');
+mkdirSync(forum);
+const subjects = ['fillet chamfer edge rounding', 'export stl mesh printing', 'pencil ipad stylus sketching', 'license billing subscription'];
+for (let i = 0; i < 24; i++) {
+  writeFileSync(join(forum, `post-${i}.md`), `<p>${subjects[i % 4]} ${subjects[(i + 1) % 4]} note ${i}.</p>\n\n<p>${subjects[i % 4]} again.</p>\n`);
+}
 
 /** Builds a real, minimal PDF with one line of text per page. */
 function tinyPdf(pages) {
@@ -162,6 +168,123 @@ try {
   await page.getByText(`Page ${step === 'Next page' ? current + 1 : current - 1} of ${total}`).waitFor();
   assert.equal(await page.locator('.source-detail blockquote').count(), 0, 'no fallback text expected');
   assert.deepEqual(problems, [], 'PDF rendering should load everything it needs');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+
+  // Topic map: a folder large enough to group, hover a topic, see what it connects to.
+  await page.getByPlaceholder('New set name').fill('Forum');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: /Forum/ }).waitFor();
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+  }, forum);
+  await page.getByRole('button', { name: 'Add folder' }).click();
+  await page.getByText(/^24 files$/).waitFor();
+  // Long file names must not push the set's buttons out of the sidebar.
+  writeFileSync(join(forum, `${'a-very-long-thread-title-'.repeat(8)}.md`), '<p>note</p>\n');
+  await page.getByRole('button', { name: 'Rescan' }).click();
+  await page.getByText(/^25 files$/).waitFor();
+  const sidebar = await page.locator('.sidebar').boundingBox();
+  const inside = async (name) => {
+    const button = await page.getByRole('button', { name, exact: true }).boundingBox();
+    assert.ok(button.x + button.width <= sidebar.x + sidebar.width, `${name} should fit in the sidebar`);
+  };
+  for (const name of ['Add files', 'Rescan', 'Topic map', 'Delete']) await inside(name);
+  assert.ok(await page.getByPlaceholder('New set name').isVisible(), 'a long file list should not hide the form');
+
+  // The sidebar drags wider, keeps long-list buttons inside, and remembers its width.
+  const handle = await page.getByRole('separator', { name: 'Resize sidebar' }).boundingBox();
+  await page.mouse.move(handle.x + 3, 300);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + 123, 300, { steps: 4 });
+  await page.mouse.up();
+  const widened = await page.locator('.sidebar').boundingBox();
+  assert.ok(Math.abs(widened.width - sidebar.width - 120) < 4, `sidebar should widen, got ${widened.width}`);
+  assert.equal(await page.evaluate(() => localStorage.getItem('docent.sidebarWidth')), String(Math.round(widened.width)));
+  await page.getByRole('separator', { name: 'Resize sidebar' }).dblclick();
+
+  // Clicking a document offers opening it or showing it in the file manager.
+  await app.evaluate(({ shell }) => {
+    globalThis.calls = [];
+    shell.openPath = async (path) => (globalThis.calls.push(['open', path]), '');
+    shell.showItemInFolder = (path) => void globalThis.calls.push(['reveal', path]);
+  });
+  const reveal = { darwin: 'Show in Finder', win32: 'Show in File Explorer' }[process.platform] ?? 'Show in folder';
+  const row = page.locator('.docs li').filter({ hasText: 'post-3.md' });
+  await row.getByRole('button', { name: 'post-3.md', exact: true }).click();
+  await row.getByRole('button', { name: 'Open', exact: true }).click();
+  await row.getByRole('button', { name: reveal }).click();
+  await page.waitForTimeout(200);
+  const expected = join(forum, 'post-3.md');
+  assert.deepEqual(await app.evaluate(() => globalThis.calls), [['open', expected], ['reveal', expected]]);
+  rmSync(expected);
+  await row.getByRole('button', { name: 'Open', exact: true }).click();
+  await row.getByRole('alert').waitFor();
+  await page.getByRole('button', { name: 'Rescan' }).click();
+  await page.getByText(/^24 files$/).waitFor();
+  // A script must never be offered to the default app, which would run it.
+  writeFileSync(join(forum, 'run-me.sh'), 'echo hello\n');
+  await page.getByRole('button', { name: 'Rescan' }).click();
+  await page.getByText(/^25 files$/).waitFor();
+  const script = page.locator('.docs li').filter({ hasText: 'run-me.sh' });
+  await script.getByRole('button', { name: 'run-me.sh', exact: true }).click();
+  await script.getByRole('button', { name: reveal }).waitFor();
+  assert.equal(await script.getByRole('button', { name: 'Open', exact: true }).count(), 0);
+  await page.screenshot({ path: join(work, 'sidebar.png') });
+
+  await page.getByRole('button', { name: 'Topic map' }).click();
+  const canvas = page.locator('.topic-stage canvas');
+  await canvas.waitFor({ timeout: 30000 });
+  await page.getByRole('heading', { name: 'Topics' }).waitFor();
+  await page.emulateMedia({ colorScheme: 'dark' });
+  const box = await canvas.boundingBox();
+  let found = false;
+  for (let y = 12; y < box.height && !found; y += 24) {
+    for (let x = 12; x < box.width && !found; x += 24) {
+      await page.mouse.move(box.x + x, box.y + y);
+      found = (await page.getByRole('heading', { name: 'Connected topics' }).count()) > 0;
+    }
+  }
+  assert.ok(found, 'hovering the map should show a topic and its connections');
+  await page.getByText('These passages share a sample subject.').first().waitFor({ timeout: 15000 });
+  await page.getByRole('heading', { name: 'Typical passages' }).waitFor();
+  assert.equal(await page.locator('.topic-panel h3').innerText(), 'Sample subject');
+
+  // A dot shows what its passage says, not just the file it came from.
+  let tip = false;
+  for (let y = 12; y < box.height && !tip; y += 8) {
+    for (let x = 12; x < box.width && !tip; x += 8) {
+      await page.mouse.move(box.x + x, box.y + y);
+      tip = (await page.locator('.topic-tip').count()) > 0;
+    }
+  }
+  assert.ok(tip, 'hovering a dot should show its passage');
+  const said = await page.locator('.topic-tip p').innerText();
+  assert.ok(said.trim() && !/\.md\b/.test(said), `a dot should show its passage, not a file name: ${said}`);
+  assert.match(await page.locator('.topic-tip small').innerText(), /post-\d+\.md, line \d+/);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.getByRole('heading', { name: 'Selected passage' }).waitFor();
+  await page.getByRole('button', { name: 'Clear' }).click();
+  // Connection lines and labels use the light text color on the dark background.
+  await page.waitForFunction(() => {
+    const c = document.querySelector('.topic-stage canvas');
+    const { data } = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] > 200 && data[i] > 200 && data[i + 1] > 200 && data[i + 2] > 200) return true;
+    }
+    return false;
+  });
+  await page.screenshot({ path: process.argv[4] ?? join(work, 'topics.png') });
+  const box2 = await canvas.boundingBox();
+  await page.mouse.move(box2.x + 40, box2.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(box2.x + 140, box2.y + 90);
+  await page.mouse.up();
+  await page.getByRole('button', { name: 'All topics' }).click();
+  await page.getByRole('heading', { name: 'Topics' }).waitFor();
+  await page.getByRole('button', { name: 'Close map' }).click();
+  await page.getByPlaceholder('Ask something').waitFor();
+  assert.deepEqual(problems, [], 'the topic map should run without errors');
   console.log('E2E passed');
 } finally {
   await app.close();
