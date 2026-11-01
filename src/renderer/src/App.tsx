@@ -557,10 +557,66 @@ function Chat({
   const [detail, setDetail] = useState<Citation | null>(null);
   const recorder = useRef(new Recorder());
   const player = useRef(new Player());
+  const chatAudioTurn = useRef<string | null>(null);
+  const reading = useRef<{ id: string; messageId: string } | null>(null);
+  const [readState, setReadState] = useState<{
+    messageId: string;
+    playing: boolean;
+  } | null>(null);
+  const [readError, setReadError] = useState<{
+    messageId: string;
+    text: string;
+  } | null>(null);
   const pacer = useRef(new Pacer());
   const cancelledTurns = useRef(new Set<string>());
   const [selection, setSelection] = useState<Selected | null>(null);
   const end = useRef<HTMLDivElement>(null);
+
+  const stopReading = () => {
+    const current = reading.current;
+    reading.current = null;
+    if (current) void api.chat.cancel(current.id).catch(() => {});
+    player.current.stop();
+    setReadState(null);
+  };
+  const readAnswer = async (message: Message) => {
+    const wasReading = reading.current?.messageId === message.id;
+    stopReading();
+    setReadError(null);
+    if (wasReading) return;
+    const id = crypto.randomUUID();
+    reading.current = { id, messageId: message.id };
+    setReadState({ messageId: message.id, playing: false });
+    try {
+      await api.chat.readAloud(id, message.text);
+      if (reading.current?.id !== id) return;
+      await player.current.whenIdle();
+    } catch (error) {
+      if (reading.current?.id !== id) return;
+      player.current.stop();
+      setReadError({
+        messageId: message.id,
+        text:
+          error instanceof Error
+            ? error.message
+            : "Could not read this answer aloud.",
+      });
+    } finally {
+      if (reading.current?.id === id) {
+        reading.current = null;
+        setReadState(null);
+      }
+    }
+  };
+  useEffect(
+    () => () => {
+      if (reading.current)
+        void api.chat.cancel(reading.current.id).catch(() => {});
+      reading.current = null;
+      player.current.stop();
+    },
+    [],
+  );
 
   const selectedIds = sets.filter((s) => s.selected).map((s) => s.id);
   const setKey = idKey(selectedIds);
@@ -618,7 +674,9 @@ function Chat({
     return () => clearTimeout(timer);
   }, [messages, activeTurn, sessionId, conversationScope]);
   const newChat = () => {
-    player.current.stop();
+    stopReading();
+    chatAudioTurn.current = null;
+    setReadError(null);
     setMessages([]);
     setSessionId(crypto.randomUUID());
     setConversationScope(null);
@@ -627,6 +685,9 @@ function Chat({
     setPanel("chat");
   };
   const openChat = (c: Conversation) => {
+    stopReading();
+    chatAudioTurn.current = null;
+    setReadError(null);
     setSessionId(c.id);
     setConversationScope({
       mode: c.mode,
@@ -685,7 +746,12 @@ function Chat({
         case "status":
           return update(turnId, (m) => ({ ...m, status: event.status }));
         case "audio": {
-          // Each sentence appears as its speech starts, so text and voice run side by side.
+          if (reading.current?.id === turnId) {
+            setReadState({
+              messageId: reading.current.messageId,
+              playing: true,
+            });
+          } else if (chatAudioTurn.current !== turnId) return;
           player.current.enqueue(event.samples, event.sampleRate);
           return;
         }
@@ -739,7 +805,9 @@ function Chat({
       .map((m) => ({ role: m.role, content: m.text }));
     setInput("");
     setActiveTurn(turnId);
-    player.current.stop();
+    stopReading();
+    chatAudioTurn.current = turnId;
+    setReadError(null);
     if (scopeChanged) {
       setSessionId(crypto.randomUUID());
       setDetail(null);
@@ -777,7 +845,8 @@ function Chat({
     setMicError(null);
     try {
       if (!recording) {
-        player.current.stop();
+        stopReading();
+        chatAudioTurn.current = null;
         await recorder.current.start();
         setRecording(true);
         return;
@@ -800,7 +869,8 @@ function Chat({
       cancelledTurns.current.add(activeTurn);
       void api.chat.cancel(activeTurn);
     }
-    player.current.stop();
+    stopReading();
+    chatAudioTurn.current = null;
     pacer.current.flush();
     setActiveTurn(null);
     setMessages((all) =>
@@ -824,6 +894,7 @@ function Chat({
       return setSelection(null);
     }
     const rect = current.getRangeAt(0).getBoundingClientRect();
+    if (reading.current) stopReading();
     setSelection({ word, x: rect.left, y: rect.bottom });
   };
 
@@ -1029,7 +1100,66 @@ function Chat({
                     >
                       Copy
                     </button>
+                    {!m.error && m.text.trim() && (
+                      <button
+                        className="read-aloud"
+                        title={
+                          readState?.messageId === m.id
+                            ? "Stop reading"
+                            : "Read aloud"
+                        }
+                        aria-label={
+                          readState?.messageId === m.id
+                            ? "Stop reading"
+                            : "Read aloud"
+                        }
+                        aria-pressed={readState?.messageId === m.id}
+                        disabled={Boolean(activeTurn) || recording}
+                        onClick={() => void readAnswer(m)}
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          {readState?.messageId === m.id ? (
+                            <rect
+                              x="6"
+                              y="6"
+                              width="12"
+                              height="12"
+                              rx="1"
+                              fill="currentColor"
+                              stroke="none"
+                            />
+                          ) : (
+                            <>
+                              <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+                              <path d="M15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14" />
+                            </>
+                          )}
+                        </svg>
+                      </button>
+                    )}
+                    {readState?.messageId === m.id && (
+                      <small className="read-status" role="status">
+                        {readState.playing
+                          ? "Reading aloud…"
+                          : "Preparing voice…"}
+                      </small>
+                    )}
                   </div>
+                )}
+                {readError?.messageId === m.id && (
+                  <p className="warning" role="alert">
+                    {readError.text}
+                  </p>
                 )}
                 {!!m.citations?.length && (
                   <p className="fine">

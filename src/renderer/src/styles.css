@@ -292,6 +292,21 @@ input:not([type="checkbox"]) {
 .message.error .text {
   color: var(--danger);
 }
+.read-aloud {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 4px;
+}
+.read-aloud[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.read-status {
+  color: var(--muted);
+}
 .text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

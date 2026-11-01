@@ -18,6 +18,7 @@ import { isViewable } from "../shared/files";
 import type { ChatTurn, DocSet, RuntimeState } from "../shared/types";
 import { documentTools } from "./analysis-tools";
 import { runTurn } from "./agent";
+import { readAloud } from "./read-aloud";
 import { indexSet } from "./ingest";
 import { PARSER_VERSION } from "./ingest/parse";
 import {
@@ -372,6 +373,32 @@ function registerIpc(update: { install(): void; check(): void }) {
   ipcMain.handle("chat:cancel", (_e, turnId: string) =>
     turns.get(turnId)?.abort(),
   );
+  ipcMain.handle("chat:readAloud", async (_e, turnId: string, text: string) => {
+    if (typeof turnId !== "string" || !turnId || turns.has(turnId))
+      throw new Error("Invalid playback request.");
+    if (!llm)
+      throw new Error("The voice model is not ready. Start it and try again.");
+    const controller = new AbortController();
+    turns.set(turnId, controller);
+    try {
+      await readAloud(
+        llm,
+        text,
+        controller.signal,
+        (t) => applyPronunciations(t, store.pronunciations()),
+        ({ samples, sampleRate }) =>
+          send("chat:event", {
+            type: "audio",
+            turnId,
+            samples,
+            sampleRate,
+            text: null,
+          }),
+      );
+    } finally {
+      turns.delete(turnId);
+    }
+  });
   ipcMain.handle(
     "chat:send",
     async (

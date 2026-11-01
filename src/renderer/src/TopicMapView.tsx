@@ -221,7 +221,7 @@ export function TopicMapView({ set, onClose, revealLabel }: { set: DocSet; onClo
               onMouseMove={(e) => {
                 if (drag.current) {
                   moved.current = true;
-                  view.current.yaw += (e.clientX - drag.current.x) * 0.008;
+                  view.current.yaw -= (e.clientX - drag.current.x) * 0.008;
                   view.current.pitch = Math.max(-1.5, Math.min(1.5, view.current.pitch + (e.clientY - drag.current.y) * 0.008));
                   drag.current = { x: e.clientX, y: e.clientY };
                   draw.current();

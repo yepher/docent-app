@@ -58,6 +58,7 @@ const api: Api = {
     remove: (id) => ipcRenderer.invoke("chat:remove", id),
     send: (req) => ipcRenderer.invoke("chat:send", req),
     transcribe: (wav) => ipcRenderer.invoke("chat:transcribe", wav),
+    readAloud: (id, text) => ipcRenderer.invoke("chat:readAloud", id, text),
     cancel: (turnId) => ipcRenderer.invoke("chat:cancel", turnId),
     onEvent: (cb) => subscribe("chat:event", cb),
   },

@@ -138,6 +138,28 @@ try {
   assert.equal((await page.evaluate(() => window.api.pronunciations.list()))[0].spoken, 'ann ser', 'Save updates the existing pronunciation');
   await page.screenshot({path: process.argv[5] ?? join(work,'pronunciations.png')});
 
+  // Read an existing answer on demand, even with automatic speech off.
+  const originalAnswer = await page.locator('.message.assistant .text').first().innerText();
+  const chatsBeforeReading = modelRequests().length;
+  const speechBeforeReading = readFileSync(ttsLog, 'utf8').trim().split('\n').length;
+  const readButton = page.getByRole('button', { name: 'Read aloud', exact: true }).first();
+  await readButton.click();
+  await page.getByText('Reading aloud…', { exact: true }).waitFor();
+  await page.screenshot({path: process.argv[6] ?? join(work, 'read-aloud.png')});
+  await page.getByRole('button', { name: 'Stop reading', exact: true }).click();
+  await readButton.waitFor();
+  assert.equal(await page.locator('.read-status').count(), 0);
+  assert.equal(await page.locator('.message.assistant .text').first().innerText(), originalAnswer);
+  assert.equal(modelRequests().length, chatsBeforeReading, 'reading never regenerates the answer');
+  const spokenAnswer = readFileSync(ttsLog, 'utf8').trim().split('\n').slice(speechBeforeReading).map(JSON.parse).join(' ');
+  assert.match(spokenAnswer, /ann ser/, 'reading uses the saved pronunciation');
+  assert.doesNotMatch(spokenAnswer, /\[\d|\*\*/, 'citation markers and markdown are not spoken');
+  // Finishing buffered audio resets the button without requiring Stop.
+  await readButton.click();
+  await page.getByRole('button', { name: 'Stop reading', exact: true }).waitFor();
+  await readButton.waitFor();
+  assert.equal(await page.locator('.read-status').count(), 0);
+
   // Speech on: the second sentence must wait for the first one's audio to play.
   await page.getByLabel('Speak replies').check();
   await page.getByPlaceholder('Ask something').fill('When do zebras graze again?');
@@ -234,6 +256,7 @@ try {
   await page.mouse.move(handle.x + 3, 300);
   await page.mouse.down();
   await page.mouse.move(handle.x + 123, 300, { steps: 4 });
+  await page.waitForFunction((width) => Math.abs(Number(document.querySelector('.sidebar-handle').getAttribute('aria-valuenow')) - width) < 4, sidebar.width + 120);
   await page.mouse.up();
   const widened = await page.locator('.sidebar').boundingBox();
   assert.ok(Math.abs(widened.width - sidebar.width - 120) < 4, `sidebar should widen, got ${widened.width}`);
@@ -330,6 +353,20 @@ try {
   await page.getByRole('button',{name:'Conversations',exact:true}).click();
   await page.getByRole('button',{name:/^What other research is referenced/}).click();
   await page.locator('.message.assistant .cite').first().waitFor();
+  await page.getByRole('button', { name: 'Read aloud', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Stop reading', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'New chat', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Stop reading', exact: true }).count(), 0, 'leaving a conversation stops reading');
+  await page.getByRole('button', { name: 'Conversations', exact: true }).click();
+  await page.getByRole('button',{name:/^What other research is referenced/}).click();
+  const savedText = await page.locator('.message.assistant .text').first().innerText();
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('chat:readAloud');
+    ipcMain.handle('chat:readAloud', () => { throw new Error('The voice model is not ready.'); });
+  });
+  await page.getByRole('button', { name: 'Read aloud', exact: true }).first().click();
+  await page.getByRole('alert').filter({ hasText: 'The voice model is not ready' }).waitFor();
+  assert.equal(await page.locator('.message.assistant .text').first().innerText(), savedText, 'voice failure leaves the saved answer intact');
   await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.send('runtime:state',{phase:'failed',message:'Simulated model outage'}));
   await page.getByText('Library search and saved conversations are available.').waitFor();
   await page.getByRole('button',{name:'Search library',exact:true}).click();

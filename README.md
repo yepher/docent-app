@@ -17,7 +17,7 @@ On first run it downloads about 1.7 GB of models and verifies them. You need abo
 3. Type, or press **Speak**, talk, and press **Stop**.
 4. Press a numbered citation to see the source. PDFs open at the cited page; other files show the passage.
 
-Speech is off by default. With **Speak replies** on, text streams immediately and evidence appears as soon as generation finishes, independently of playback.
+Speech is off by default. Click the small **Read aloud** speaker button beside an answer's Save and Copy actions to hear that answer, including answers in saved conversations. Click it again to stop. Playback uses the local voice model and saved pronunciations, omits citation markers, and does not regenerate or change the answer. With **Speak replies** on, text streams immediately and evidence appears as soon as generation finishes, independently of playback.
 
 To correct how a word is said, select it in an answer and choose **Set pronunciation**. Spell it how it sounds, press **Preview** to hear it, then **Save**. It applies to all future speech, and changes only the voice, not the written answer. In the sidebar's **Pronunciations** list, use **Edit** to revise a saved pronunciation and **Test** to hear either the saved pronunciation or your unsaved edit. **Cancel** keeps the saved value.
 

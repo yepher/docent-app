@@ -217,6 +217,7 @@ export interface Api {
       documentIds?: number[];
     }): Promise<void>;
     transcribe(wav: ArrayBuffer): Promise<string>;
+    readAloud(playbackId: string, text: string): Promise<void>;
     cancel(turnId: string): Promise<void>;
     onEvent(cb: (e: ChatEvent) => void): () => void;
   };

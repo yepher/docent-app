@@ -63,6 +63,19 @@ export class Player {
   private context: AudioContext | null = null;
   private nextTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
+  private idle = new Set<() => void>();
+
+  /** Resolves after the queued audio has actually played, or playback is stopped. */
+  whenIdle(): Promise<void> {
+    if (!this.sources.size) return Promise.resolve();
+    return new Promise((resolve) => this.idle.add(resolve));
+  }
+
+  private finishIdle() {
+    if (this.sources.size) return;
+    for (const resolve of this.idle) resolve();
+    this.idle.clear();
+  }
 
   /** Queues audio and returns the seconds until it starts playing. */
   enqueue(samples: ArrayBuffer, sampleRate: number): number {
@@ -74,7 +87,10 @@ export class Player {
     const source = this.context.createBufferSource();
     source.buffer = buffer;
     source.connect(this.context.destination);
-    source.onended = () => this.sources.delete(source);
+    source.onended = () => {
+      this.sources.delete(source);
+      this.finishIdle();
+    };
     this.nextTime = Math.max(this.nextTime, this.context.currentTime + 0.05);
     const startsIn = this.nextTime - this.context.currentTime;
     source.start(this.nextTime);
@@ -92,6 +108,7 @@ export class Player {
     this.sources.forEach((s) => s.stop());
     this.sources.clear();
     this.nextTime = 0;
+    this.finishIdle();
   }
 }
 
