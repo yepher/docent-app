@@ -30,14 +30,13 @@ import { LibrarySearch } from "./LibrarySearch";
 import { PronunciationList } from "./PronunciationList";
 import { ToolsPanel, ToolRunInfo } from "./ToolsPanel";
 import type { ToolRunRecord } from "../../shared/tools";
-import { PdfPage } from "./PdfPage";
+import { SourceDetail } from "./SourceDetail";
 import { TopicMapView } from "./TopicMapView";
 import { Pacer, Player, Recorder } from "./audio";
 import { CopyButton } from "./CopyButton";
 import { DropImport } from "./DropImport";
 import { SearchQuality } from "./SearchQuality";
 import {
-  isImagePath,
   isVisualPath,
   MAX_IMAGE_BYTES,
   MAX_VISUALS,
@@ -1361,6 +1360,7 @@ function Chat({
           <SourceDetail
             key={`${detail.documentId}:${detail.version ?? ""}`}
             citation={detail}
+            revealLabel={revealLabel}
             onClose={() => setDetail(null)}
             onAsk={activeTurn || attaching ? undefined : askVisual}
           />
@@ -1560,126 +1560,6 @@ function DocumentActions({
   );
 }
 
-function SourceDetail({
-  citation,
-  onClose,
-  onAsk,
-}: {
-  citation: Citation;
-  onClose: () => void;
-  onAsk?: (source: VisualSource, title: string) => void;
-}) {
-  const [pageFailed, setPageFailed] = useState(false);
-  const [passages, setPassages] = useState<Citation[]>([]);
-  const [find, setFind] = useState("");
-  useEffect(() => {
-    if (citation.documentId)
-      void api.docs.passages(citation.documentId).then(setPassages);
-  }, [citation.documentId]);
-  // Only PDFs have page numbers. Text pulled from a PDF is often unreadable, so show the page itself.
-  const showPage = citation.page !== null && !pageFailed;
-  const imageSource: VisualSource | null =
-    citation.page === null && (citation.visual || isImagePath(citation.path))
-      ? (citation.visual ?? {
-          documentId: citation.documentId,
-          version: citation.version,
-        })
-      : null;
-  return (
-    <aside className={`source-detail${showPage ? " pdf" : ""}`}>
-      <button className="close" aria-label="Close" onClick={onClose}>
-        ×
-      </button>
-      <h3>{citation.title}</h3>
-      <p className="fine">
-        {citation.setName}, {where(citation)}
-      </p>
-      {citation.indexedAt && (
-        <p className="fine">
-          Indexed {new Date(citation.indexedAt).toLocaleString()} · Version{" "}
-          {citation.version?.slice(0, 10) ?? "legacy"}
-        </p>
-      )}
-      {citation.warning && <p className="warning">{citation.warning}</p>}
-      <details open className="evidence">
-        <summary>
-          {citation.visual ? "Visual evidence" : "Passage used for this answer"}
-        </summary>
-        <blockquote>
-          <Highlighted text={citation.excerpt} query={find} />
-        </blockquote>
-      </details>
-      {!imageSource && (
-        <input
-          aria-label="Find in source"
-          placeholder="Highlight a word or phrase"
-          value={find}
-          onChange={(e) => setFind(e.target.value)}
-        />
-      )}
-      {showPage ? (
-        <PdfPage
-          citation={citation}
-          onFailed={() => setPageFailed(true)}
-          onAsk={
-            onAsk
-              ? (page) =>
-                  onAsk(
-                    {
-                      documentId: citation.documentId,
-                      version: citation.version,
-                      page,
-                    },
-                    citation.title,
-                  )
-              : undefined
-          }
-        />
-      ) : imageSource ? (
-        <>
-          {onAsk && (
-            <button
-              className="ask-visual"
-              onClick={() => onAsk(imageSource, citation.title)}
-            >
-              Ask about this image
-            </button>
-          )}
-          <VisualImage source={imageSource} title={citation.title} />
-        </>
-      ) : (
-        <>
-          {pageFailed && (
-            <p className="fine">
-              The page could not be shown, so this is the text that was read
-              from it.
-            </p>
-          )}
-          <details>
-            <summary>Read indexed document</summary>
-            {passages.map((c, i) => (
-              <p className="indexed-passage" key={i}>
-                <small>{where(c)}</small>
-                <Highlighted text={c.excerpt} query={find} />
-              </p>
-            ))}
-          </details>
-        </>
-      )}
-      {citation.documentId > 0 && (
-        <div className="actions">
-          <button onClick={() => void api.docs.open(citation.documentId)}>
-            Open file
-          </button>
-          <button onClick={() => void api.docs.reveal(citation.documentId)}>
-            {revealLabel}
-          </button>
-        </div>
-      )}
-    </aside>
-  );
-}
-
 function PronouncePopover({
   selected,
   existing,
@@ -1855,26 +1735,6 @@ function UpdateBanner() {
   return null;
 }
 
-function Highlighted({ text, query }: { text: string; query: string }) {
-  if (!query.trim()) return <>{text}</>;
-  const parts: ReactNode[] = [];
-  let from = 0;
-  const lower = text.toLowerCase();
-  const needle = query.toLowerCase();
-  for (
-    let at = lower.indexOf(needle);
-    at >= 0;
-    at = lower.indexOf(needle, from)
-  ) {
-    parts.push(
-      text.slice(from, at),
-      <mark key={at}>{text.slice(at, at + needle.length)}</mark>,
-    );
-    from = at + needle.length;
-  }
-  parts.push(text.slice(from));
-  return <>{parts}</>;
-}
 function LibraryTools() {
   const [status, setStatus] = useState("");
   const run = async (action: () => Promise<boolean>) => {

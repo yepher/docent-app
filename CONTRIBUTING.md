@@ -101,6 +101,8 @@ npm run test:e2e
 
 `npm test` includes offline durability, stable citations, backup recovery, document scope, request counting, local OCR, visual source/cache isolation, and reranking validation, cancellation, caching and fallback. `npm run test:e2e` uses disposable profiles and fake model servers, including native app identity and menu actions, image import, PDF page selection, screenshot paste, reopening image citations after a reload, and reranker ordering, scope, failures and persisted settings.
 
+`tests/citation-search-e2e.mjs` checks citation highlighting, next/previous navigation, keyboard shortcuts, panel scrolling, document text scope, literal search terms, and resetting search when switching citations. `tests/text-search.test.ts` covers Unicode offsets, wrapped phrases, and removal of indexing overlap so document matches are counted once.
+
 To run an opt-in comparison against installed models:
 
 ```sh
