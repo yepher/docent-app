@@ -1,7 +1,7 @@
 {
   "name": "docent",
   "productName": "Docent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local voice and chat agent that answers from your own documents, with citations. Runs LFM3-Omni on your machine.",
   "license": "MIT",
   "author": "Docent contributors <claude@yepher.com>",
