@@ -451,6 +451,66 @@ input:not([type="checkbox"]) {
   flex: 1;
   padding: 8px 12px;
 }
+.attach-image {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+}
+.visual-attachments {
+  padding: 8px 20px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.visual-attachments > .fine,
+.visual-attachments > .warning {
+  flex-basis: 100%;
+  margin: 0;
+}
+.visual-chip {
+  display: inline-flex;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.visual-chip button {
+  border: 0;
+}
+.visual-chip button:first-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.message-visuals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.message-visuals button {
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.ask-visual {
+  margin: 8px 0;
+  color: var(--accent);
+}
+.visual-image-frame {
+  overflow: auto;
+  max-height: 65vh;
+  margin: 8px 0;
+}
+.visual-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background: white;
+}
+.visual-image.expanded img {
+  max-width: none;
+}
 .mic.recording {
   background: var(--danger);
   border-color: var(--danger);
@@ -824,6 +884,12 @@ select {
   font-size: 12px;
   margin: 12px 0;
 }
+.search-quality { margin: 12px 0; font-size: 12px; }
+.search-quality summary { cursor: pointer; }
+.search-quality progress { width: 100%; }
+.search-quality button { margin: 4px 0; }
+.search-quality label { display: flex; align-items: center; gap: 6px; }
+.search-quality .fine { overflow-wrap: anywhere; }
 .doc-actions details {
   max-height: 250px;
   overflow: auto;

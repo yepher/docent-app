@@ -6,7 +6,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 export interface ModelFile {
-  id: 'llm' | 'mmproj' | 'embedder';
+  id: 'llm' | 'mmproj' | 'embedder' | 'reranker';
   name: string;
   url: string;
   size: number;
@@ -17,7 +17,7 @@ const LFM = 'https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF/resolve/3d29af2ad
 const NOMIC = 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/0188c9bf409793f810680a5a431e7b899c46104c';
 
 /** Pinned by commit and hash, so a release always runs the exact weights it was tested with. */
-export const MODEL_FILES: ModelFile[] = [
+export const CORE_MODEL_FILES: ModelFile[] = [
   {
     id: 'llm',
     name: 'LFM3-Omni-2B-Q4_K_M.gguf',
@@ -40,6 +40,15 @@ export const MODEL_FILES: ModelFile[] = [
     sha256: 'd4e388894e09cf3816e8b0896d81d265b55e7a9fff9ab03fe8bf4ef5e11295ac',
   },
 ];
+
+export const RERANKER_MODEL: ModelFile = {
+  id: 'reranker',
+  name: 'qwen3-reranker-0.6b-q8_0.gguf',
+  url: 'https://huggingface.co/ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF/resolve/a02f48bb4f057028298c21fa033da2b30d7742d5/qwen3-reranker-0.6b-q8_0.gguf',
+  size: 639153184,
+  sha256: '22c9979ce4fbcdc5acdc310c6641c32797eff1aa980b8f7a2db8a8ea23429a48',
+};
+export const MODEL_FILES: ModelFile[] = [...CORE_MODEL_FILES, RERANKER_MODEL];
 
 export type ProgressFn = (p: { file: string; loaded: number; total: number }) => void;
 

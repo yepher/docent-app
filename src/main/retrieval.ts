@@ -1,6 +1,8 @@
 import type { Store, StoredChunk } from "./store";
 import { nearestTopic } from "./topics";
 import { type VoiceKind, voiceKind, voiceSentences } from "./voices";
+import { RERANK_CANDIDATES } from "./reranker";
+import { withSourceContext } from "./evidence";
 
 const CANDIDATES = 30;
 const RRF_K = 60;
@@ -35,7 +37,20 @@ export interface Survey {
   groups: SurveyGroup[];
 }
 
-export type EmbedQuery = (text: string) => Promise<Float32Array>;
+export type EmbedQuery = (
+  text: string,
+  signal?: AbortSignal,
+) => Promise<Float32Array>;
+export type Rerank = (
+  query: string,
+  passages: StoredChunk[],
+  signal?: AbortSignal,
+) => Promise<number[] | null>;
+export interface SearchOptions {
+  signal?: AbortSignal;
+  onReranking?: () => void;
+  onFallback?: () => void;
+}
 
 function dot(a: Float32Array, b: Float32Array): number {
   let sum = 0;
@@ -62,7 +77,9 @@ export class Retriever {
     private rank?: (
       q: Float32Array,
       vectors: Float32Array[],
+      signal?: AbortSignal,
     ) => Promise<number[]>,
+    private rerank?: Rerank,
   ) {}
 
   /** Hybrid search: exact keywords and meaning, merged by reciprocal rank fusion. */
@@ -71,7 +88,10 @@ export class Retriever {
     query: string,
     limit = 8,
     documentIds: number[] = [],
+    options: SearchOptions = {},
   ): Promise<StoredChunk[]> {
+    options.signal?.throwIfAborted();
+    const generation = this.store.generation;
     if (setIds.length === 0) return [];
     const loaded = this.load(setIds);
     const owners = documentIds.length
@@ -88,9 +108,9 @@ export class Retriever {
 
     let byMeaning: number[] = [];
     try {
-      const q = normalize(await this.embedQuery(query));
+      const q = normalize(await this.embedQuery(query, options.signal));
       const values = this.rank
-        ? await this.rank(q, vectors)
+        ? await this.rank(q, vectors, options.signal)
         : vectors.map((v) => dot(q, v));
       byMeaning = ids
         .map((id, i) => ({ id, score: values[i]! }))
@@ -101,6 +121,7 @@ export class Retriever {
     } catch {
       /* The on-disk keyword index remains useful without a model. */
     }
+    options.signal?.throwIfAborted();
     const byKeyword = this.store.keywordSearch(
       setIds,
       query,
@@ -127,27 +148,61 @@ export class Retriever {
       seen.add(key);
       return true;
     });
+    let ranked = unique;
+    let reranked = false;
+    if (this.rerank && unique.length > 1) {
+      const shortlist = unique.slice(0, RERANK_CANDIDATES);
+      try {
+        options.onReranking?.();
+        const relevance = await this.rerank(query, shortlist, options.signal);
+        options.signal?.throwIfAborted();
+        if (relevance !== null) {
+          if (
+            relevance.length !== shortlist.length ||
+            relevance.some((s) => !Number.isFinite(s) || s < 0 || s > 1)
+          )
+            throw new Error("Invalid reranking result.");
+          ranked = shortlist
+            .map((chunk, i) => ({ chunk, score: relevance[i]!, i }))
+            .sort((a, b) => b.score - a.score || a.i - b.i)
+            .map((r) => r.chunk);
+          reranked = true;
+        }
+      } catch {
+        options.signal?.throwIfAborted();
+        options.onFallback?.();
+      }
+    }
     const documents = new Set<number>();
     const diverse = unique.filter(
       (c) => !documents.has(c.documentId) && documents.add(c.documentId),
     );
-    const chosen = [
-      ...diverse,
-      ...unique.filter((c) => !diverse.includes(c)),
-    ].slice(0, limit);
-    return chosen.map((c) => {
-      const neighbors = this.store.documentChunks(c.documentId);
-      const i = neighbors.findIndex((n) => n.id === c.id);
-      return {
-        ...c,
-        text: neighbors
-          .slice(Math.max(0, i - 1), i + 2)
-          .filter((n) => n.page === c.page)
-          .map((n) => n.text)
-          .join("\n\n"),
-        line: neighbors[Math.max(0, i - 1)]?.line ?? c.line,
-      };
-    });
+    const chosen = (
+      reranked
+        ? ranked
+        : [...diverse, ...unique.filter((c) => !diverse.includes(c))]
+    ).slice(0, limit);
+    // Background imports can continue, but a changed source must not be joined to new neighbors.
+    if (this.store.generation !== generation) {
+      const current = new Map(
+        this.store.chunksById(chosen.map((c) => c.id)).map((c) => [c.id, c]),
+      );
+      if (
+        chosen.some((c) => {
+          const fresh = current.get(c.id);
+          return (
+            !fresh ||
+            fresh.documentId !== c.documentId ||
+            fresh.version !== c.version ||
+            fresh.text !== c.text
+          );
+        })
+      )
+        throw new Error(
+          "The library changed while searching. Please ask again.",
+        );
+    }
+    return withSourceContext(this.store, chosen);
   }
 
   /**

@@ -245,7 +245,7 @@ describe('search and indexing', () => {
     writeFileSync(join(dir, 'docs/photo.png'), 'x');
     writeFileSync(join(dir, 'docs/node_modules/b.md'), 'x');
     writeFileSync(join(dir, 'docs/.git/c.md'), 'x');
-    expect(await collectFiles(join(dir, 'docs'))).toEqual([join(dir, 'docs/a.md')]);
+    expect(await collectFiles(join(dir, 'docs'))).toEqual([join(dir, 'docs/a.md'), join(dir, 'docs/photo.png')]);
   });
 
   // The first PDF also loads pdfjs, which took 5.8s on a Windows runner.
@@ -260,7 +260,7 @@ describe('search and indexing', () => {
   it('explains a PDF with no text layer', async () => {
     const path = join(dir, 'scan.pdf');
     writeFileSync(path, tinyPdf(['']));
-    await expect(parseFile(path)).rejects.toThrow(/OCR/);
+    expect((await parseFile(path))[0]).toEqual({ page: 1, text: 'No readable text on this page. Use Ask about this page to inspect its visual content.' });
   });
 
   it('strips scripts from HTML', async () => {
@@ -313,7 +313,7 @@ describe('runTurn', () => {
     const result = await runTurn({ llm, search, hasSelectedDocuments: true }, 'a long enough question to stand alone', [], opts(), events());
     const toolMessage = (seen[1]!.messages as { role: string; content: string }[]).at(-1)!;
     expect(toolMessage.role).toBe('tool');
-    expect(toolMessage.content).toBe('[3] doc3.pdf, page 2\nnew passage');
+    expect(toolMessage.content).toBe('[3] doc3.pdf, page 2 (document ID 3)\nnew passage');
     expect(result.citations.find((c) => c.n === 3)).toMatchObject({ title: 'doc3.pdf', cited: true });
   });
 

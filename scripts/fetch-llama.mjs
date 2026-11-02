@@ -78,5 +78,7 @@ Downloaded on first run, not included in the app:
   https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF
 - nomic-embed-text v1.5, Nomic AI, Apache-2.0:
   https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF
+- Qwen3-Reranker-0.6B, Qwen, Apache-2.0 (GGUF conversion by ggml-org):
+  https://huggingface.co/ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF
 `,
 );

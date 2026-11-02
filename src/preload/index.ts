@@ -8,6 +8,16 @@ function subscribe<T>(channel: string, cb: (value: T) => void) {
 }
 
 const api: Api = {
+  reranker: {
+    state: () => ipcRenderer.invoke("reranker:state"),
+    install: () => ipcRenderer.invoke("reranker:install"),
+    enable: (enabled) => ipcRenderer.invoke("reranker:enable", enabled),
+    onState: (cb) => subscribe("reranker:state", cb),
+  },
+  vision: {
+    attach: (bytes, name) => ipcRenderer.invoke("vision:attach", bytes, name),
+    preview: (source) => ipcRenderer.invoke("vision:preview", source),
+  },
   imports: {
     drop: (files) =>
       ipcRenderer.invoke(

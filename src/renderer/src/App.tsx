@@ -33,6 +33,17 @@ import { TopicMapView } from "./TopicMapView";
 import { Pacer, Player, Recorder } from "./audio";
 import { CopyButton } from "./CopyButton";
 import { DropImport } from "./DropImport";
+import { SearchQuality } from "./SearchQuality";
+import {
+  isImagePath,
+  isVisualPath,
+  MAX_IMAGE_BYTES,
+  MAX_VISUALS,
+  visualKey,
+  type VisualSelection,
+  type VisualSource,
+} from "../../shared/vision";
+import { VisualImage, visualCitation } from "./VisualImage";
 
 declare global {
   interface Window {
@@ -42,6 +53,7 @@ declare global {
 const api = window.api;
 
 interface Message {
+  visuals?: VisualSelection[];
   toolRuns?: ToolRunRecord[];
   warnings?: string[];
   id: string;
@@ -89,6 +101,7 @@ const revealLabel =
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
 
 function where(c: Citation): string {
+  if (c.visual && c.page === null) return "image";
   if (c.page !== null) return `page ${c.page}`;
   if (c.line !== null) return `line ${c.line}`;
   return c.setName;
@@ -175,6 +188,7 @@ function Setup({ state }: { state: RuntimeState }) {
 }
 
 function Workspace({ ready }: { ready: boolean }) {
+  const [viewedSource, setViewedSource] = useState<Citation | null>(null);
   const [sets, setSets] = useState<DocSet[]>([]);
   const [pronunciations, setPronunciations] = useState<Pronunciation[]>([]);
   const [mapSetId, setMapSetId] = useState<number | null>(null);
@@ -224,6 +238,7 @@ function Workspace({ ready }: { ready: boolean }) {
         }}
       />
       <Sidebar
+        onView={setViewedSource}
         ready={ready}
         sets={sets}
         refresh={refresh}
@@ -232,6 +247,7 @@ function Workspace({ ready }: { ready: boolean }) {
         onShowTopics={setMapSetId}
       />
       <Chat
+        viewedSource={viewedSource}
         sets={sets}
         pronunciations={pronunciations}
         refreshPronunciations={refreshPronunciations}
@@ -251,6 +267,7 @@ function Workspace({ ready }: { ready: boolean }) {
 }
 
 function Sidebar({
+  onView,
   ready,
   sets,
   refresh,
@@ -258,6 +275,7 @@ function Sidebar({
   refreshPronunciations,
   onShowTopics,
 }: {
+  onView: (c: Citation) => void;
   ready: boolean;
   sets: DocSet[];
   refresh: () => void;
@@ -334,6 +352,7 @@ function Sidebar({
             </div>
             {openId === set.id && (
               <SetDetail
+                onView={onView}
                 set={set}
                 refresh={refresh}
                 busy={progress !== null || !ready}
@@ -370,6 +389,7 @@ function Sidebar({
         <button disabled={!name.trim()}>Add</button>
       </form>
       <LibraryTools />
+      <SearchQuality ready={ready} />
       {pronunciations.length > 0 && (
         <PronunciationList
           entries={pronunciations}
@@ -381,11 +401,13 @@ function Sidebar({
 }
 
 function SetDetail({
+  onView,
   set,
   refresh,
   busy,
   onShowTopics,
 }: {
+  onView: (c: Citation) => void;
   set: DocSet;
   refresh: () => void;
   busy: boolean;
@@ -483,7 +505,26 @@ function SetDetail({
               </button>
               {doc.error && <small>{doc.error}</small>}
               {openDocument === doc.id && (
-                <DocumentActions key={doc.id} document={doc} />
+                <DocumentActions
+                  key={doc.id}
+                  document={doc}
+                  onView={() =>
+                    onView({
+                      n: 0,
+                      documentId: doc.id,
+                      title: doc.title,
+                      path: doc.path,
+                      setName: set.name,
+                      page: /\.pdf$/i.test(doc.path) ? 1 : null,
+                      line: null,
+                      excerpt: "Offline original document.",
+                      version: doc.version,
+                      indexedAt: doc.indexedAt,
+                      warning: doc.error,
+                      cited: false,
+                    })
+                  }
+                />
               )}
             </li>
           ))}
@@ -503,7 +544,9 @@ function AnswerText({
   const parts: ReactNode[] = [];
   let last = 0;
   for (const match of message.text.matchAll(/\[(\d+(?:\s*,\s*\d+)*)\]/g)) {
-    parts.push(...strongText(message.text.slice(last, match.index)));
+    parts.push(
+      ...strongText(message.text.slice(last, match.index), `text-${last}`),
+    );
     for (const n of match[1]!.split(",").map(Number)) {
       const citation = message.citations?.find((c) => c.n === n);
       parts.push(
@@ -523,21 +566,29 @@ function AnswerText({
     }
     last = match.index + match[0].length;
   }
-  parts.push(...strongText(message.text.slice(last)));
+  parts.push(...strongText(message.text.slice(last), `text-${last}`));
   return <div className="text">{parts}</div>;
 }
 
 function Chat({
+  viewedSource,
   sets,
   pronunciations,
   refreshPronunciations,
 }: {
+  viewedSource: Citation | null;
   sets: DocSet[];
   pronunciations: Pronunciation[];
   refreshPronunciations: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [visuals, setVisuals] = useState<VisualSelection[]>([]);
+  const [visualError, setVisualError] = useState("");
+  const [attaching, setAttaching] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const questionInput = useRef<HTMLInputElement>(null);
+  const attachmentGeneration = useRef(0);
   const [speak, setSpeak] = useState(false);
   const [mode, setMode] = useState<"documents" | "general">("documents");
   const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
@@ -558,6 +609,9 @@ function Chat({
   const [micError, setMicError] = useState<string | null>(null);
   const [activeTurn, setActiveTurn] = useState<string | null>(null);
   const [detail, setDetail] = useState<Citation | null>(null);
+  useEffect(() => {
+    if (viewedSource) setDetail(viewedSource);
+  }, [viewedSource]);
   const recorder = useRef(new Recorder());
   const player = useRef(new Player());
   const chatAudioTurn = useRef<string | null>(null);
@@ -625,7 +679,12 @@ function Chat({
   const setKey = idKey(selectedIds);
   const documentIds =
     documentSelection.setKey === setKey ? documentSelection.ids : [];
-  const nextScope: QuestionScope = { mode, setIds: selectedIds, documentIds };
+  const nextScope: QuestionScope = {
+    mode,
+    setIds: selectedIds,
+    documentIds,
+    visualKey: visualKey(visuals.map((v) => v.source)),
+  };
   const scopeChanged = Boolean(
     conversationScope && !sameQuestionScope(conversationScope, nextScope),
   );
@@ -677,6 +736,9 @@ function Chat({
     return () => clearTimeout(timer);
   }, [messages, activeTurn, sessionId, conversationScope]);
   const newChat = () => {
+    attachmentGeneration.current++;
+    setVisuals([]);
+    setVisualError("");
     stopReading();
     chatAudioTurn.current = null;
     setReadError(null);
@@ -688,6 +750,9 @@ function Chat({
     setPanel("chat");
   };
   const openChat = (c: Conversation) => {
+    attachmentGeneration.current++;
+    setVisuals(c.messages.findLast((m) => m.role === "user")?.visuals ?? []);
+    setVisualError("");
     stopReading();
     chatAudioTurn.current = null;
     setReadError(null);
@@ -696,6 +761,7 @@ function Chat({
       mode: c.mode,
       setIds: c.setIds,
       documentIds: c.documentIds ?? [],
+      visualKey: c.visualKey,
     });
     setDocumentSelection({
       setKey,
@@ -800,12 +866,13 @@ function Chat({
 
   const send = async (text: string, spoken: boolean) => {
     const question = text.trim();
-    if (!question || activeTurn) return;
+    if (!question || activeTurn || attaching) return;
     const turnId = crypto.randomUUID();
     const previousMessages = scopeChanged ? [] : messages;
     const history: ChatTurn[] = previousMessages
       .filter((m) => !m.error && !m.pending)
-      .map((m) => ({ role: m.role, content: m.text }));
+      .slice(-6)
+      .map((m) => ({ role: m.role, content: m.text, citations: m.citations }));
     setInput("");
     setActiveTurn(turnId);
     stopReading();
@@ -818,7 +885,7 @@ function Chat({
     setPanel("chat");
     setMessages([
       ...previousMessages,
-      { id: `${turnId}-q`, role: "user", text: question },
+      { id: `${turnId}-q`, role: "user", text: question, visuals },
       {
         id: turnId,
         role: "assistant",
@@ -837,11 +904,58 @@ function Chat({
         mode,
         setIds: selectedIds,
         documentIds,
+        visuals: visuals.map((v) => v.source),
       });
     } catch (e) {
       setActiveTurn(null);
       setSaveError(String(e));
     }
+  };
+
+  const attachImages = async (files: File[]) => {
+    if (activeTurn || attaching || !files.length) return;
+    setVisualError("");
+    if (visuals.length + files.length > MAX_VISUALS) {
+      setVisualError(`Attach up to ${MAX_VISUALS} images or pages at a time.`);
+      return;
+    }
+    if (
+      files.some(
+        (f) =>
+          !["image/png", "image/jpeg"].includes(f.type) ||
+          f.size > MAX_IMAGE_BYTES,
+      )
+    ) {
+      setVisualError("Choose PNG or JPEG images smaller than 50 MB.");
+      return;
+    }
+    const generation = attachmentGeneration.current;
+    setAttaching(true);
+    try {
+      const added: VisualSelection[] = [];
+      for (const file of files)
+        added.push(
+          await api.vision.attach(
+            await file.arrayBuffer(),
+            file.name || "Pasted image.png",
+          ),
+        );
+      if (generation === attachmentGeneration.current)
+        setVisuals((current) => [...current, ...added].slice(0, MAX_VISUALS));
+      questionInput.current?.focus();
+    } catch (error) {
+      if (generation === attachmentGeneration.current)
+        setVisualError(String(error));
+    } finally {
+      setAttaching(false);
+    }
+  };
+  const askVisual = (source: VisualSource, title: string) => {
+    if (activeTurn || attaching) return;
+    setVisuals([{ source, title }]);
+    setVisualError("");
+    setPanel("chat");
+    questionInput.current?.focus();
   };
 
   const toggleMic = async () => {
@@ -917,10 +1031,18 @@ function Chat({
                       .join(", ")
               }`
             : mode === "general"
-              ? "General chat · no document evidence"
+              ? visuals.length
+                ? "General chat with attached images"
+                : "General chat · no document evidence"
               : scope.length
                 ? `Answering from: ${scope.map((s) => s.name).join(", ")}`
-                : "Select document sets to ask a question"}
+                : visuals.length
+                  ? "Answering from: attached images"
+                  : "Select document sets to ask a question"}
+          {mode === "documents" &&
+            scope.length > 0 &&
+            visuals.length > 0 &&
+            ` + ${visuals.length} attached ${visuals.length === 1 ? "image/page" : "images/pages"}`}
         </span>
         <div className="actions">
           <button
@@ -1085,6 +1207,21 @@ function Chat({
                 className={`message ${m.role}${m.error ? " error" : ""}`}
               >
                 <AnswerText message={m} onCite={setDetail} />
+                {!!m.visuals?.length && (
+                  <div className="message-visuals">
+                    {m.visuals.map((v, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setDetail(visualCitation(v))}
+                      >
+                        ▧ {v.title}
+                        {"documentId" in v.source && v.source.page
+                          ? ` · page ${v.source.page}`
+                          : ""}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {m.role === "assistant" && !m.pending && (
                   <div className="actions">
                     <button
@@ -1162,8 +1299,8 @@ function Chat({
                 )}
                 {!!m.citations?.length && (
                   <p className="fine">
-                    Evidence links identify retrieved passages. Check the
-                    wording below; a citation alone does not verify a claim.
+                    Evidence links identify source passages and images. Check
+                    the wording below; a citation alone does not verify a claim.
                   </p>
                 )}
                 {m.warnings?.map((w) => (
@@ -1211,9 +1348,10 @@ function Chat({
 
         {detail && (
           <SourceDetail
-            key={detail.documentId}
+            key={`${detail.documentId}:${detail.version ?? ""}`}
             citation={detail}
             onClose={() => setDetail(null)}
+            onAsk={activeTurn || attaching ? undefined : askVisual}
           />
         )}
       </div>
@@ -1231,8 +1369,55 @@ function Chat({
         />
       )}
       {micError && <p className="mic-error">{micError}</p>}
+      {(visuals.length > 0 || attaching || visualError) && (
+        <div className="visual-attachments">
+          {!!visuals.length && (
+            <span className="fine">
+              Images for this question and follow-ups
+            </span>
+          )}
+          {visuals.map((v, i) => (
+            <span className="visual-chip" key={i}>
+              <button
+                type="button"
+                onClick={() => setDetail(visualCitation(v))}
+              >
+                ▧ {v.title}
+                {"documentId" in v.source && v.source.page
+                  ? ` · page ${v.source.page}`
+                  : ""}
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove attachment ${v.title}`}
+                disabled={Boolean(activeTurn) || attaching}
+                onClick={() =>
+                  setVisuals((all) => all.filter((_, n) => n !== i))
+                }
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {attaching && <span role="status">Preparing image…</span>}
+          {visualError && (
+            <p role="alert" className="warning">
+              {visualError}
+            </p>
+          )}
+        </div>
+      )}
       <form
         className="composer"
+        onPaste={(e) => {
+          const files = Array.from(e.clipboardData.files).filter((f) =>
+            f.type.startsWith("image/"),
+          );
+          if (files.length) {
+            e.preventDefault();
+            void attachImages(files);
+          }
+        }}
         onSubmit={(e) => {
           e.preventDefault();
           void send(input, speak);
@@ -1248,17 +1433,57 @@ function Chat({
           {recording ? "Stop" : "Speak"}
         </button>
         <input
+          ref={questionInput}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={recording ? "Listening…" : "Ask something"}
           disabled={recording}
         />
+        <input
+          ref={imageInput}
+          type="file"
+          hidden
+          accept="image/png,image/jpeg"
+          multiple
+          aria-label="Choose images"
+          onChange={(e) => {
+            void attachImages(Array.from(e.target.files ?? []));
+            e.target.value = "";
+          }}
+        />
+        <button
+          type="button"
+          className="attach-image"
+          title="Attach PNG/JPEG images, or paste a screenshot into the question"
+          aria-label="Attach image"
+          disabled={
+            Boolean(activeTurn) ||
+            attaching ||
+            recording ||
+            visuals.length >= MAX_VISUALS
+          }
+          onClick={() => imageInput.current?.click()}
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden="true"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="3" />
+            <circle cx="8" cy="8" r="1.5" />
+            <path d="m3 17 5-5 4 4 4-6 5 7" />
+          </svg>
+        </button>
         {activeTurn ? (
           <button type="button" onClick={stop}>
             Stop
           </button>
         ) : (
-          <button className="primary" disabled={!input.trim()}>
+          <button className="primary" disabled={!input.trim() || attaching}>
             Send
           </button>
         )}
@@ -1275,7 +1500,13 @@ function Chat({
   );
 }
 
-function DocumentActions({ document }: { document: DocumentRow }) {
+function DocumentActions({
+  document,
+  onView,
+}: {
+  document: DocumentRow;
+  onView: () => void;
+}) {
   const [missing, setMissing] = useState(false);
   const [passages, setPassages] = useState<Citation[]>([]);
   const run = (action: Promise<boolean>) =>
@@ -1283,7 +1514,11 @@ function DocumentActions({ document }: { document: DocumentRow }) {
   return (
     <div className="doc-actions">
       <button
-        onClick={() => void api.docs.passages(document.id).then(setPassages)}
+        onClick={() =>
+          isVisualPath(document.path)
+            ? onView()
+            : void api.docs.passages(document.id).then(setPassages)
+        }
       >
         Read offline
       </button>
@@ -1317,18 +1552,28 @@ function DocumentActions({ document }: { document: DocumentRow }) {
 function SourceDetail({
   citation,
   onClose,
+  onAsk,
 }: {
   citation: Citation;
   onClose: () => void;
+  onAsk?: (source: VisualSource, title: string) => void;
 }) {
   const [pageFailed, setPageFailed] = useState(false);
   const [passages, setPassages] = useState<Citation[]>([]);
   const [find, setFind] = useState("");
   useEffect(() => {
-    void api.docs.passages(citation.documentId).then(setPassages);
+    if (citation.documentId)
+      void api.docs.passages(citation.documentId).then(setPassages);
   }, [citation.documentId]);
   // Only PDFs have page numbers. Text pulled from a PDF is often unreadable, so show the page itself.
   const showPage = citation.page !== null && !pageFailed;
+  const imageSource: VisualSource | null =
+    citation.page === null && (citation.visual || isImagePath(citation.path))
+      ? (citation.visual ?? {
+          documentId: citation.documentId,
+          version: citation.version,
+        })
+      : null;
   return (
     <aside className={`source-detail${showPage ? " pdf" : ""}`}>
       <button className="close" aria-label="Close" onClick={onClose}>
@@ -1346,19 +1591,51 @@ function SourceDetail({
       )}
       {citation.warning && <p className="warning">{citation.warning}</p>}
       <details open className="evidence">
-        <summary>Passage used for this answer</summary>
+        <summary>
+          {citation.visual ? "Visual evidence" : "Passage used for this answer"}
+        </summary>
         <blockquote>
           <Highlighted text={citation.excerpt} query={find} />
         </blockquote>
       </details>
-      <input
-        aria-label="Find in source"
-        placeholder="Highlight a word or phrase"
-        value={find}
-        onChange={(e) => setFind(e.target.value)}
-      />
+      {!imageSource && (
+        <input
+          aria-label="Find in source"
+          placeholder="Highlight a word or phrase"
+          value={find}
+          onChange={(e) => setFind(e.target.value)}
+        />
+      )}
       {showPage ? (
-        <PdfPage citation={citation} onFailed={() => setPageFailed(true)} />
+        <PdfPage
+          citation={citation}
+          onFailed={() => setPageFailed(true)}
+          onAsk={
+            onAsk
+              ? (page) =>
+                  onAsk(
+                    {
+                      documentId: citation.documentId,
+                      version: citation.version,
+                      page,
+                    },
+                    citation.title,
+                  )
+              : undefined
+          }
+        />
+      ) : imageSource ? (
+        <>
+          {onAsk && (
+            <button
+              className="ask-visual"
+              onClick={() => onAsk(imageSource, citation.title)}
+            >
+              Ask about this image
+            </button>
+          )}
+          <VisualImage source={imageSource} title={citation.title} />
+        </>
       ) : (
         <>
           {pageFailed && (
@@ -1378,14 +1655,16 @@ function SourceDetail({
           </details>
         </>
       )}
-      <div className="actions">
-        <button onClick={() => void api.docs.open(citation.documentId)}>
-          Open file
-        </button>
-        <button onClick={() => void api.docs.reveal(citation.documentId)}>
-          {revealLabel}
-        </button>
-      </div>
+      {citation.documentId > 0 && (
+        <div className="actions">
+          <button onClick={() => void api.docs.open(citation.documentId)}>
+            Open file
+          </button>
+          <button onClick={() => void api.docs.reveal(citation.documentId)}>
+            {revealLabel}
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
@@ -1565,12 +1844,12 @@ function LibraryTools() {
   );
 }
 
-function strongText(text: string): ReactNode[] {
+function strongText(text: string, prefix = "text"): ReactNode[] {
   return text
     .split(/(\*\*[^*]+\*\*)/g)
     .map((part, i) =>
       part.startsWith("**") && part.endsWith("**") ? (
-        <strong key={i}>{part.slice(2, -2)}</strong>
+        <strong key={`${prefix}-${i}`}>{part.slice(2, -2)}</strong>
       ) : (
         part
       ),

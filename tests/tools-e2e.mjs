@@ -33,6 +33,7 @@ try {
   await page.getByText("1 file", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Tools", exact: true }).click();
   await page.getByRole("heading", { name: "Tools for your library" }).waitFor();
+  await page.locator(".tool-card").nth(3).waitFor();
   assert.equal(await page.locator(".tool-card").count(), 4);
   await page
     .getByRole("button", { name: /^Count documents mentioning a phrase/ })

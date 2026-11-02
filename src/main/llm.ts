@@ -35,7 +35,7 @@ export interface Llm {
 
 export interface Embedder {
   embedDocuments(texts: string[]): Promise<Float32Array[]>;
-  embedQuery(text: string): Promise<Float32Array>;
+  embedQuery(text: string, signal?: AbortSignal): Promise<Float32Array>;
 }
 
 export interface Endpoint {
@@ -82,7 +82,7 @@ export class LlamaServerLlm implements Llm {
         messages,
         stream: true,
         temperature: 0, // Liquid recommends greedy decoding for text output.
-        ...(tools.length > 0 ? { tools, tool_choice: 'auto' } : {}),
+        ...(tools.length > 0 ? { tools, tool_choice: 'auto' } : { tool_choice: 'none' }),
       },
       signal,
     );
@@ -160,15 +160,28 @@ export class LlamaServerEmbedder implements Embedder {
     return this.embed(texts.map((t) => `search_document: ${t}`));
   }
 
-  async embedQuery(text: string) {
-    const [vector] = await this.embed([`search_query: ${text}`]);
-    if (!vector) throw new Error('Embedding server returned nothing');
+  async embedQuery(text: string, signal?: AbortSignal) {
+    const [vector] = await this.embed([`search_query: ${text}`], signal);
+    if (!vector) throw new Error("Embedding server returned nothing");
     return vector;
   }
 
-  private async embed(input: string[]): Promise<Float32Array[]> {
-    const res = await post(this.endpoint, '/v1/embeddings', { input }, AbortSignal.timeout(60_000));
-    const body = (await res.json()) as { data: { index: number; embedding: number[] }[] };
-    return body.data.sort((a, b) => a.index - b.index).map((d) => Float32Array.from(d.embedding));
+  private async embed(
+    input: string[],
+    signal?: AbortSignal,
+  ): Promise<Float32Array[]> {
+    const timeout = AbortSignal.timeout(60_000);
+    const res = await post(
+      this.endpoint,
+      "/v1/embeddings",
+      { input },
+      signal ? AbortSignal.any([signal, timeout]) : timeout,
+    );
+    const body = (await res.json()) as {
+      data: { index: number; embedding: number[] }[];
+    };
+    return body.data
+      .sort((a, b) => a.index - b.index)
+      .map((d) => Float32Array.from(d.embedding));
   }
 }

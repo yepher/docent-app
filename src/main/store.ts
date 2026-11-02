@@ -9,8 +9,16 @@ import type {
 } from "../shared/types";
 import type { Chunk } from "./ingest/chunk";
 import { isCommonWord } from "./topics";
+import type { VisualSource } from "../shared/vision";
 
 export interface StoredChunk {
+  context?: {
+    text: string;
+    page: number | null;
+    line: number | null;
+    position: "before" | "after";
+  }[];
+  visual?: VisualSource;
   id: number;
   documentId: number;
   text: string;
@@ -89,7 +97,10 @@ CREATE TABLE IF NOT EXISTS topic_maps (
 CREATE TABLE IF NOT EXISTS document_ids (id INTEGER PRIMARY KEY AUTOINCREMENT);
 CREATE TABLE IF NOT EXISTS exclusions (set_id INTEGER NOT NULL REFERENCES sets(id) ON DELETE CASCADE, path TEXT NOT NULL, PRIMARY KEY(set_id,path));
 CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS import_reports (set_id INTEGER PRIMARY KEY REFERENCES sets(id) ON DELETE CASCADE, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS image_attachments (id TEXT PRIMARY KEY, title TEXT NOT NULL, bytes BLOB NOT NULL, preview BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS visual_cache (document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE, version TEXT NOT NULL, page INTEGER NOT NULL, bytes BLOB NOT NULL, used_at REAL NOT NULL, PRIMARY KEY(document_id,version,page));
 CREATE INDEX IF NOT EXISTS chunks_document ON chunks(document_id);
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
   text, content='chunks', content_rowid='id', tokenize='unicode61'
@@ -110,6 +121,23 @@ export class Store {
   readonly db: DatabaseSync;
   /** Bumped on any chunk change so the in-memory vector cache knows to reload. */
   generation = 0;
+
+  rerankingEnabled(): boolean {
+    return (
+      (
+        this.db
+          .prepare("SELECT value FROM settings WHERE key='reranking'")
+          .get() as { value: string } | undefined
+      )?.value !== "off"
+    );
+  }
+  setRerankingEnabled(enabled: boolean) {
+    this.db
+      .prepare(
+        "INSERT OR REPLACE INTO settings(key,value) VALUES ('reranking',?)",
+      )
+      .run(enabled ? "on" : "off");
+  }
 
   constructor(path: string) {
     this.db = new DatabaseSync(path);
@@ -551,7 +579,7 @@ export class Store {
       )
       .all(...setIds, ...documentIds, ...terms, limit) as { id: number }[];
     return [
-      ...new Set([...names.map((r) => r.id), ...rows.map((r) => r.id)]),
+      ...new Set([...rows.map((r) => r.id), ...names.map((r) => r.id)]),
     ].slice(0, limit);
   }
 

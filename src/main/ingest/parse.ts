@@ -2,6 +2,8 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, extname, join } from "node:path";
 import type { Segment } from "./chunk";
+import { isImagePath } from "../../shared/vision";
+import { renderImage } from "../vision-render";
 
 const TEXT_EXTENSIONS = new Set(
   (
@@ -29,7 +31,12 @@ const SKIP_DIRS = new Set([
 
 export function isSupported(path: string): boolean {
   const ext = extname(path).toLowerCase();
-  return ext === ".pdf" || ext === ".docx" || TEXT_EXTENSIONS.has(ext);
+  return (
+    isImagePath(path) ||
+    ext === ".pdf" ||
+    ext === ".docx" ||
+    TEXT_EXTENSIONS.has(ext)
+  );
 }
 
 /** Files under a path. Skips hidden entries, dependency folders and symlinks, so a link cannot pull in files outside what was picked. */
@@ -146,7 +153,12 @@ async function parsePdf(bytes: Buffer): Promise<Segment[]> {
         const result = await ocr.recognize(canvas.toBuffer("image/png"));
         text = result.data.text;
       }
-      if (text.trim()) segments.push({ text, page });
+      segments.push({
+        text:
+          text.trim() ||
+          "No readable text on this page. Use Ask about this page to inspect its visual content.",
+        page,
+      });
     }
   } finally {
     await ocr?.terminate();
@@ -163,6 +175,27 @@ export async function parseFile(path: string): Promise<Segment[]> {
     throw new Error("Data file is too large to read as text");
   const bytes = await readFile(path);
   let segments: Segment[];
+  if (isImagePath(path)) {
+    const pixels = await renderImage(bytes);
+    const { createWorker } = await import("tesseract.js");
+    const require = createRequire(import.meta.url);
+    const worker = await createWorker("eng", 1, {
+      langPath: require("@tesseract.js-data/eng").langPath,
+      cacheMethod: "none",
+      gzip: true,
+    });
+    try {
+      const result = await worker.recognize(pixels);
+      return [
+        {
+          text: `Image: ${basename(path)}\n${result.data.text.trim() || "No readable text. Use Ask about this image to inspect its visual content."}`,
+          page: null,
+        },
+      ];
+    } finally {
+      await worker.terminate();
+    }
+  }
   if (ext === ".pdf") {
     segments = await parsePdf(bytes);
     if (segments.length === 0)

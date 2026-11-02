@@ -1,10 +1,24 @@
 // Run against an already packaged executable: node tests/packaged-smoke.mjs /path/to/Docent
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, dirname } from "node:path";
 import { _electron as electron } from "playwright-core";
 const work = mkdtempSync(join(tmpdir(), "docent-package-test-"));
+if (process.platform === "darwin") {
+  const contents = resolve(dirname(process.argv[2]), "..");
+  const icon = execFileSync(
+    "/usr/libexec/PlistBuddy",
+    ["-c", "Print CFBundleIconFile", join(contents, "Info.plist")],
+    { encoding: "utf8" },
+  ).trim();
+  assert.deepEqual(
+    readFileSync(join(contents, "Resources", icon)),
+    readFileSync(new URL("../build/icon.icns", import.meta.url)),
+    "Finder and the installer must use Docent's icon, not Electron's",
+  );
+}
 const text = join(work, "manual.txt");
 writeFileSync(text, "Replacement filter F19.");
 const objects = [
@@ -41,6 +55,21 @@ try {
     }),
     false,
     "The runtime Dock icon is included in the packaged app",
+  );
+  const attached = await page.evaluate(
+    async (bytes) => {
+      const image = await window.api.vision.attach(
+        Uint8Array.from(bytes).buffer,
+        "packaged-test.png",
+      );
+      return window.api.vision.preview(image.source);
+    },
+    [...readFileSync(new URL("../build/icon.png", import.meta.url))],
+  );
+  assert.match(
+    attached,
+    /^data:image\/png;base64,/,
+    "Packaged vision worker prepares and saves an image offline",
   );
   const tools = await page.evaluate(() => window.api.tools.list());
   assert.equal(tools.filter((t) => t.origin.kind === "bundled").length, 4);
@@ -83,11 +112,11 @@ try {
   );
   const blank = await parse(scan);
   assert.match(
-    blank.error ?? "",
-    /No readable text found, including after local OCR/,
+    blank.value?.[0]?.text ?? JSON.stringify(blank),
+    /Use Ask about this page/,
   );
   console.log(
-    "Packaged worker, local OCR, and offline QuickJS tool smoke test passed",
+    "Packaged icon, vision worker, local OCR, and offline QuickJS tool smoke test passed",
   );
 } finally {
   await app.close();

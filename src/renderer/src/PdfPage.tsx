@@ -10,9 +10,11 @@ const asset = (dir: string) => new URL(`pdfjs/${dir}/`, document.baseURI).href;
 export function PdfPage({
   citation,
   onFailed,
+  onAsk,
 }: {
   citation: Citation;
   onFailed: () => void;
+  onAsk?: (page: number) => void;
 }) {
   const { documentId } = citation;
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -155,6 +157,15 @@ export function PdfPage({
           ›
         </button>
       </div>
+      {onAsk && (
+        <button
+          className="ask-visual"
+          disabled={!pdf}
+          onClick={() => onAsk(shown)}
+        >
+          Ask about this page
+        </button>
+      )}
       <div className="pdf-frame" ref={frame}>
         <div style={{ position: "relative", width: `${zoom * 100}%` }}>
           <div className="pdf-text-layer" ref={textLayer} />

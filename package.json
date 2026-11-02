@@ -13,12 +13,12 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/dev.mjs",
     "build": "electron-vite build",
     "build:tools": "node --experimental-strip-types scripts/build-tool-catalog.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "electron-vite build && node tests/e2e.mjs && node tests/tools-e2e.mjs && node tests/import-e2e.mjs",
+    "test:e2e": "electron-vite build && node tests/e2e.mjs && node tests/tools-e2e.mjs && node tests/import-e2e.mjs && node tests/menu-e2e.mjs && node tests/vision-e2e.mjs && node tests/reranker-e2e.mjs && node tests/answer-quality-e2e.mjs && node tests/streaming-text-e2e.mjs && node tests/answer-completion-e2e.mjs",
     "fetch:llama": "node scripts/fetch-llama.mjs",
     "dist": "electron-vite build && node scripts/fetch-llama.mjs && electron-builder --publish never",
     "release": "node scripts/release.mjs"

@@ -1,4 +1,5 @@
 export interface QuestionScope {
+  visualKey?: string;
   mode: "documents" | "general";
   setIds: number[];
   documentIds: number[];
@@ -11,6 +12,7 @@ export function idKey(ids: number[]): string {
 /** History is useful only within the same source selection and answer mode. */
 export function sameQuestionScope(a: QuestionScope, b: QuestionScope): boolean {
   return (
+    (a.visualKey ?? "") === (b.visualKey ?? "") &&
     a.mode === b.mode &&
     (a.mode === "general" ||
       (idKey(a.setIds) === idKey(b.setIds) &&

@@ -10,6 +10,9 @@ import { documentTools, requestExamples } from "../src/main/analysis-tools";
 import { runTurn } from "../src/main/agent";
 import { indexSet } from "../src/main/ingest";
 import { ToolManager } from "../src/main/tools/manager";
+import { createCanvas } from "@napi-rs/canvas";
+import { readFileSync } from "node:fs";
+import { VisionLibrary } from "../src/main/vision";
 const enabled = process.env.DOCENT_REAL_MODEL_EVAL === "1";
 describe.skipIf(!enabled)("real local model evaluation (opt in)", () => {
   let s: Store;
@@ -67,6 +70,125 @@ describe.skipIf(!enabled)("real local model evaluation (opt in)", () => {
     servers.forEach((x) => x.stop());
     s?.close();
   });
+  it("vision reads labeled image regions and cites the attached pixels", async () => {
+    const canvas = createCanvas(1000, 400),
+      ctx = canvas.getContext("2d");
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, 1000, 400);
+    ctx.fillStyle = "#2464d8";
+    ctx.fillRect(50, 80, 320, 220);
+    ctx.fillStyle = "#168848";
+    ctx.fillRect(630, 80, 320, 220);
+    ctx.fillStyle = "white";
+    ctx.font = "bold 48px sans-serif";
+    ctx.fillText("FILTER", 105, 205);
+    ctx.fillText("PUMP", 710, 205);
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(395, 190);
+    ctx.lineTo(605, 190);
+    ctx.lineTo(570, 160);
+    ctx.moveTo(605, 190);
+    ctx.lineTo(570, 220);
+    ctx.stroke();
+    const library = new VisionLibrary(s);
+    const selection = await library.attach(
+      Uint8Array.from(canvas.toBuffer("image/png")).buffer,
+      "flow-diagram.png",
+    );
+    const result = await runTurn(
+      {
+        llm,
+        hasSelectedDocuments: false,
+        search: async () => [],
+        vision: { initial: [await library.prepare(selection.source)] },
+      },
+      "What word is inside the blue box, what word is inside the green box, and which way does the arrow point? Cite the image.",
+      [],
+      { speak: false, signal: AbortSignal.timeout(90000) },
+      { status() {}, delta() {}, audio() {} },
+    );
+    console.log("REAL MODEL VISION:", result.text);
+    expect(result.text).toMatch(/filter/i);
+    expect(result.text).toMatch(/pump/i);
+    expect(result.text).toMatch(/right|filter to (?:the )?pump/i);
+    expect(result.citations[0]?.cited).toBe(true);
+    expect(result.citations[0]?.visual).toEqual(selection.source);
+  }, 100000);
+  it.skipIf(!process.env.DOCENT_VISION_SCREENSHOT)(
+    "vision reads the version from a real screenshot",
+    async () => {
+      const library = new VisionLibrary(s);
+      const selection = await library.attach(
+        Uint8Array.from(readFileSync(process.env.DOCENT_VISION_SCREENSHOT!))
+          .buffer,
+        "installer-screenshot.png",
+      );
+      const result = await runTurn(
+        {
+          llm,
+          hasSelectedDocuments: false,
+          search: async () => [],
+          vision: { initial: [await library.prepare(selection.source)] },
+        },
+        "What Docent version number is shown in the installer window title? Cite the image.",
+        [],
+        { speak: false, signal: AbortSignal.timeout(90000) },
+        { status() {}, delta() {}, audio() {} },
+      );
+      console.log("REAL MODEL SCREENSHOT:", result.text);
+      expect(result.text).toContain("0.1.0");
+      expect(result.citations[0]?.cited).toBe(true);
+    },
+    100000,
+  );
+  it.skipIf(!process.env.DOCENT_ATTENTION_PDF)(
+    "vision inspects the research paper's architecture figure through the native tool",
+    async () => {
+      const papers = s.createSet("Visual research paper").id;
+      s.addSource(papers, process.env.DOCENT_ATTENTION_PDF!);
+      await indexSet(s, embedder, papers, () => {});
+      const doc = s.documents(papers)[0]!;
+      const library = new VisionLibrary(s);
+      let inspected = false;
+      const result = await runTurn(
+        {
+          llm,
+          hasSelectedDocuments: true,
+          search: async () =>
+            s
+              .documentChunks(doc.id)
+              .filter((c) => c.page === 3)
+              .slice(0, 3),
+          analysis: documentTools(s, [papers]),
+          vision: {
+            initial: [],
+            inspect: async (documentId, page, signal) => {
+              inspected = true;
+              return library.prepare({ documentId, page }, signal, [doc.id]);
+            },
+          },
+        },
+        `Use inspect_document_page to look at document ID ${doc.id}, page 3. In Figure 1, which side is the encoder and which side is the decoder? Cite the visual source.`,
+        [],
+        { speak: false, signal: AbortSignal.timeout(90000) },
+        { status() {}, delta() {}, audio() {} },
+      );
+      console.log("REAL MODEL PDF VISION:", result.text);
+      expect(inspected).toBe(true);
+      expect(result.text).toMatch(/encoder/i);
+      expect(result.text).toMatch(/decoder/i);
+      expect(result.text).toMatch(/left/i);
+      expect(result.text).toMatch(/right/i);
+      expect(
+        result.citations.some(
+          (c) => c.visual && c.cited && c.documentId === doc.id && c.page === 3,
+        ),
+      ).toBe(true);
+    },
+    180000,
+  );
   it("retrieves both versions and cites a cross-document comparison", async () => {
     const result = await runTurn(
       {

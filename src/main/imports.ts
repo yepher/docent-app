@@ -39,7 +39,7 @@ export class ImportInbox {
       }
       if (!info.isDirectory() && (!info.isFile() || !isSupported(path)))
         throw new Error(
-          `“${basename(path)}” is not a supported document. Drop a PDF, DOCX, text document, or folder.`,
+          `“${basename(path)}” is not a supported document. Drop a PDF, PNG, JPEG, DOCX, text document, or folder.`,
         );
       items.set(path, {
         path,

@@ -111,3 +111,20 @@ export const embedderArgs = (model: string) => [
   '-ub', '8192',
   '-np', '2',
 ];
+
+/** Separate causal cross-encoder; it scores query/passage pairs and never generates answers. */
+export const rerankerArgs = (model: string) => [
+  "-m",
+  model,
+  "--reranking",
+  "--pooling",
+  "rank",
+  "-c",
+  "8192",
+  "-np",
+  "2",
+  "-b",
+  "2048",
+  "-ub",
+  "512",
+];

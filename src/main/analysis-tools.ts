@@ -1,6 +1,8 @@
 import type { StoredChunk, Store } from "./store";
 import { voiceSentences } from "./voices";
 import { numberedReferences } from "./references";
+import { findRequesters } from "./forum-requests";
+import { withSourceContext } from "./evidence";
 
 export interface RequestExample {
   sentence: string;
@@ -126,6 +128,8 @@ export function documentTools(
       .flatMap((id) => store.documents(id))
       .filter((d) => !documentIds.length || documentIds.includes(d.id));
   return {
+    requesters: (question: string, signal?: AbortSignal) =>
+      findRequesters(store, setIds, documentIds, question, signal),
     references: () => {
       const documents = allowed();
       // Broad collections use search; full bibliography extraction is for a small scope.
@@ -144,8 +148,22 @@ export function documentTools(
         indexedAt: d.indexedAt,
         warning: d.error,
       })),
-    read: (id: number) =>
-      allowed().some((d) => d.id === id) ? store.documentChunks(id) : [],
+    read: (id: number, offset = 0, limit = 12) => {
+      if (
+        !Number.isSafeInteger(id) ||
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(limit) ||
+        limit < 1 ||
+        limit > 12
+      )
+        throw new Error(
+          "Supply a document ID, a non-negative passage offset and a limit from 1 to 12.",
+        );
+      return allowed().some((d) => d.id === id)
+        ? withSourceContext(store, store.documentChunkPage(id, offset, limit))
+        : [];
+    },
     count: (phrase: string) => {
       const needle = phrase.toLowerCase().trim();
       if (!needle || needle.length > 200)

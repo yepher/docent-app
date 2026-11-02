@@ -1,5 +1,6 @@
 import type { ToolRunRecord, ToolsApi } from "./tools";
 import type { ImportsApi } from "./imports";
+import type { VisualSelection, VisualSource } from "./vision";
 
 export interface DocSet {
   id: number;
@@ -23,6 +24,9 @@ export interface DocumentRow {
 }
 
 export interface Citation {
+  /** Stable indexed passage identity, revalidated before reuse in another answer. */
+  passageId?: number;
+  visual?: VisualSource;
   n: number;
   documentId: number;
   title: string;
@@ -46,6 +50,7 @@ export interface Pronunciation {
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
+  citations?: Citation[];
 }
 
 export type ChatEvent =
@@ -84,6 +89,14 @@ export type RuntimeState =
   | { phase: "downloading"; file: string; loaded: number; total: number }
   | { phase: "starting" }
   | { phase: "ready" }
+  | { phase: "failed"; message: string };
+
+export type RerankerState =
+  | { phase: "not-installed"; downloadBytes: number }
+  | { phase: "disabled" }
+  | { phase: "starting" }
+  | { phase: "ready" }
+  | { phase: "downloading"; loaded: number; total: number }
   | { phase: "failed"; message: string };
 
 export interface IngestProgress {
@@ -147,6 +160,7 @@ export interface TopicMap {
 }
 
 export interface SavedMessage {
+  visuals?: VisualSelection[];
   toolRuns?: ToolRunRecord[];
   warnings?: string[];
   id: string;
@@ -158,6 +172,7 @@ export interface SavedMessage {
   saved?: boolean;
 }
 export interface Conversation {
+  visualKey?: string;
   id: string;
   title: string;
   updatedAt: number;
@@ -180,6 +195,16 @@ export interface ImportReport {
   skipped: number;
 }
 export interface Api {
+  reranker: {
+    state(): Promise<RerankerState>;
+    install(): Promise<void>;
+    enable(enabled: boolean): Promise<void>;
+    onState(cb: (state: RerankerState) => void): () => void;
+  };
+  vision: {
+    attach(bytes: ArrayBuffer, name: string): Promise<VisualSelection>;
+    preview(source: VisualSource): Promise<string>;
+  };
   imports: ImportsApi;
   clipboard: { writeText(text: string): Promise<void> };
   tools: ToolsApi;
@@ -211,6 +236,7 @@ export interface Api {
     save(conversation: Conversation): Promise<void>;
     remove(id: string): Promise<void>;
     send(req: {
+      visuals?: VisualSource[];
       turnId: string;
       text: string;
       history: ChatTurn[];

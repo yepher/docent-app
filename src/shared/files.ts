@@ -3,7 +3,7 @@
  * so anything else can only be shown in its folder.
  */
 const VIEWABLE = new Set(
-  '.pdf .docx .md .markdown .txt .text .rst .csv .tsv .log .json .jsonl .yaml .yml .toml .xml'.split(' '),
+  '.pdf .png .jpg .jpeg .docx .md .markdown .txt .text .rst .csv .tsv .log .json .jsonl .yaml .yml .toml .xml'.split(' '),
 );
 
 export function isViewable(path: string): boolean {

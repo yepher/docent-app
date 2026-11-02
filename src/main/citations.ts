@@ -1,3 +1,5 @@
+import { withoutSourceMetadata, type SourceMetadata } from "./source-metadata";
+
 const MARKER = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
 
 /**
@@ -91,12 +93,15 @@ function speakable(text: string): string {
 export function evidenceIssues(
   answer: string,
   sources: Map<number, string>,
+  visualSources = new Set<number>(),
+  metadata: SourceMetadata[] = [],
 ): string[] {
   if (!sources.size) return [];
   const splitter = new SentenceSplitter();
-  const sentences = [...splitter.push(answer), ...splitter.flush()].map((p) =>
-    p.raw.trim(),
-  );
+  const sentences = [
+    ...splitter.push(withoutSourceMetadata(answer, metadata)),
+    ...splitter.flush(),
+  ].map((p) => p.raw.trim());
   const issues = new Set<string>();
   for (const sentence of sentences) {
     if (sentence.length < 25 || sentence.endsWith(":")) continue;
@@ -110,6 +115,8 @@ export function evidenceIssues(
       continue;
     }
     const evidence = refs.map((n) => sources.get(n) ?? "").join(" ");
+    // Values seen in pixels need not appear in OCR. The linked original is the evidence.
+    if (refs.some((n) => visualSources.has(n))) continue;
     const numbers =
       sentence
         .replace(/\[\d+(?:\s*,\s*\d+)*\]/g, "")

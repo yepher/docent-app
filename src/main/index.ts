@@ -18,7 +18,14 @@ import { extname, join } from "node:path";
 import { isViewable } from "../shared/files";
 import type { ChatTurn, DocSet, RuntimeState } from "../shared/types";
 import { documentTools } from "./analysis-tools";
-import { runTurn } from "./agent";
+import { runTurn, type TurnResult } from "./agent";
+import { historyEvidence } from "./evidence";
+import { reviewGrounding } from "./grounding";
+import {
+  installApplicationMenu,
+  PROJECT_URL,
+  setApplicationIdentity,
+} from "./menu";
 import { readAloud } from "./read-aloud";
 import { indexSet } from "./ingest";
 import { PARSER_VERSION } from "./ingest/parse";
@@ -30,6 +37,8 @@ import {
 } from "./llm";
 import {
   MODEL_FILES,
+  CORE_MODEL_FILES,
+  RERANKER_MODEL,
   freeBytes,
   installModels,
   isInstalled,
@@ -37,7 +46,9 @@ import {
 } from "./models";
 import { applyPronunciations } from "./pronunciation";
 import { Retriever } from "./retrieval";
-import { Sidecar, embedderArgs, llmArgs } from "./sidecar";
+import { Sidecar, embedderArgs, llmArgs, rerankerArgs } from "./sidecar";
+import { LlamaServerReranker } from "./reranker";
+import type { RerankerState } from "../shared/types";
 import { Store } from "./store";
 import {
   MIN_PASSAGES_FOR_TOPICS,
@@ -51,8 +62,17 @@ import { registerToolIpc } from "./tools/ipc";
 import { stopToolWorkers } from "./tools/sandbox";
 import { ImportInbox } from "./imports";
 import type { ImportDestination } from "../shared/imports";
+import { VisionLibrary } from "./vision";
+import {
+  isImagePath,
+  isVisualPath,
+  MAX_VISUALS,
+  type VisualSource,
+} from "../shared/vision";
 
-const RELEASES_URL = "https://github.com/yepher/docent-app/releases";
+setApplicationIdentity();
+
+const RELEASES_URL = `${PROJECT_URL}/releases`;
 const dev = !app.isPackaged;
 const MAX_WORD_CHARS = 60;
 const MAX_SPOKEN_CHARS = 200;
@@ -80,6 +100,10 @@ function llamaBinary(): string {
 
 let window: BrowserWindow | null = null;
 let store: Store;
+const visionLibrary = () =>
+  new VisionLibrary(store, (bytes, page, signal) =>
+    libraryWork<Uint8Array>({ kind: "vision", bytes, page }, signal),
+  );
 let toolManager: ToolManager;
 let toolsBusy = () => false;
 const createToolManager = () =>
@@ -89,6 +113,11 @@ const createToolManager = () =>
 let llm: Llm | null = null;
 let embedder: Embedder | null = null;
 let retriever: Retriever | null = null;
+let reranker: LlamaServerReranker | null = null;
+let rerankerServer: Sidecar | null = null;
+let rerankerEpoch = 0;
+let rerankerDownloading = false;
+let rerankerState: RerankerState = { phase: "starting" };
 let state: RuntimeState = { phase: "starting" };
 const sidecars: Sidecar[] = [];
 const turns = new Map<string, AbortController>();
@@ -153,9 +182,80 @@ function setState(next: RuntimeState) {
   send("runtime:state", next);
 }
 
+function setRerankerState(next: RerankerState) {
+  rerankerState = next;
+  send("reranker:state", next);
+}
+function stopReranker() {
+  rerankerEpoch++;
+  rerankerServer?.stop();
+  rerankerServer = null;
+  reranker = null;
+}
+async function startReranker() {
+  stopReranker();
+  const epoch = rerankerEpoch;
+  if (!store.rerankingEnabled()) {
+    setRerankerState({ phase: "disabled" });
+    return;
+  }
+  if (!fakeBinary && !isInstalled(modelsDir(), [RERANKER_MODEL])) {
+    setRerankerState({
+      phase: "not-installed",
+      downloadBytes: RERANKER_MODEL.size,
+    });
+    return;
+  }
+  setRerankerState({ phase: "starting" });
+  const server = new Sidecar({
+    name: "Relevance model",
+    binary: llamaBinary(),
+    args: rerankerArgs(join(modelsDir(), RERANKER_MODEL.name)),
+    onExit: (message) => {
+      if (epoch !== rerankerEpoch) return;
+      reranker = null;
+      setRerankerState({ phase: "failed", message });
+    },
+  });
+  rerankerServer = server;
+  try {
+    const endpoint = await server.start();
+    if (epoch !== rerankerEpoch) {
+      server.stop();
+      return;
+    }
+    reranker = new LlamaServerReranker(endpoint);
+    setRerankerState({ phase: "ready" });
+  } catch (error) {
+    server.stop();
+    if (epoch === rerankerEpoch)
+      setRerankerState({
+        phase: "failed",
+        message: error instanceof Error ? error.message : String(error),
+      });
+  }
+}
+const makeRetriever = (client: Embedder) =>
+  new Retriever(
+    store,
+    (query, signal) => client.embedQuery(query, signal),
+    (q, vectors, signal) =>
+      libraryWork<number[]>({ kind: "rank", q, vectors }, signal),
+    (query, passages, signal) =>
+      reranker
+        ? reranker.score(
+            query,
+            passages.map((c) => `${c.title.slice(0, 160)}\n${c.text}`),
+            signal,
+          )
+        : Promise.resolve(null),
+  );
+
 async function startRuntime() {
   if (booting) return;
   booting = true;
+  stopReranker();
+  setRerankerState({ phase: "starting" });
   sidecars.splice(0).forEach((s) => s.stop());
   llm = null;
   embedder = null;
@@ -165,6 +265,11 @@ async function startRuntime() {
   const path = (id: string) =>
     join(dir, MODEL_FILES.find((f) => f.id === id)!.name);
   const onExit = (message: string) => {
+    stopReranker();
+    setRerankerState({
+      phase: "failed",
+      message: "Start the local models to enable enhanced retrieval.",
+    });
     llm = null;
     embedder = null;
     retriever = null;
@@ -192,14 +297,15 @@ async function startRuntime() {
     llm = new LlamaServerLlm(mainEndpoint);
     const client = new LlamaServerEmbedder(embedEndpoint);
     embedder = client;
-    retriever = new Retriever(
-      store,
-      (q) => client.embedQuery(q),
-      (q, vectors) => libraryWork<number[]>({ kind: "rank", q, vectors }),
-    );
+    retriever = makeRetriever(client);
     setState({ phase: "ready" });
+    void startReranker();
     maintainLibrary();
   } catch (err) {
+    setRerankerState({
+      phase: "failed",
+      message: "Start the local models to enable enhanced retrieval.",
+    });
     sidecars.splice(0).forEach((s) => s.stop());
     setState({
       phase: "failed",
@@ -211,7 +317,8 @@ async function startRuntime() {
 }
 
 async function boot() {
-  if (fakeBinary || isInstalled(modelsDir())) return startRuntime();
+  if (fakeBinary || isInstalled(modelsDir(), CORE_MODEL_FILES))
+    return startRuntime();
   setState({
     phase: "needs-models",
     downloadBytes: await missingBytes(modelsDir()),
@@ -222,6 +329,23 @@ async function boot() {
 function requireWindow(): BrowserWindow {
   if (!window) throw new Error("No window");
   return window;
+}
+
+async function importFromMenu(folder: boolean) {
+  if (!window) createWindow();
+  const target = requireWindow();
+  if (target.isMinimized()) target.restore();
+  target.show();
+  target.focus();
+  const result = await dialog.showOpenDialog(target, {
+    title: folder
+      ? "Import a Folder into Docent"
+      : "Import Documents into Docent",
+    buttonLabel: "Choose",
+    properties: [folder ? "openDirectory" : "openFile", "multiSelections"],
+  });
+  if (!result.canceled && result.filePaths.length)
+    await importInbox.stage(result.filePaths);
 }
 
 /** Rebuilds a set's topics if its passages changed. Slow on large sets, so it yields as it works. */
@@ -352,11 +476,54 @@ function registerIpc(update: { install(): void; check(): void }) {
     clipboard.writeText(text);
   });
   ipcMain.handle("runtime:restart", () => {
-    if (libraryJobs || turns.size)
+    if (libraryJobs || turns.size || rerankerDownloading)
       throw new Error("Wait for current work to finish.");
     return boot();
   });
   ipcMain.handle("runtime:state", () => state);
+  ipcMain.handle("reranker:state", () => rerankerState);
+  ipcMain.handle("reranker:enable", async (_e, enabled: boolean) => {
+    if (typeof enabled !== "boolean")
+      throw new Error("Invalid search setting.");
+    if (rerankerDownloading)
+      throw new Error("Wait for the relevance model download to finish.");
+    store.setRerankingEnabled(enabled);
+    if (!enabled) {
+      stopReranker();
+      setRerankerState({ phase: "disabled" });
+    } else if (state.phase === "ready") await startReranker();
+  });
+  ipcMain.handle("reranker:install", async () => {
+    if (rerankerDownloading || state.phase !== "ready") return;
+    rerankerDownloading = true;
+    try {
+      setRerankerState({
+        phase: "downloading",
+        loaded: 0,
+        total: RERANKER_MODEL.size,
+      });
+      await installModels(
+        modelsDir(),
+        (p) =>
+          setRerankerState({
+            phase: "downloading",
+            loaded: p.loaded,
+            total: p.total,
+          }),
+        undefined,
+        [RERANKER_MODEL],
+      );
+      store.setRerankingEnabled(true);
+      await startReranker();
+    } catch (error) {
+      setRerankerState({
+        phase: "failed",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      rerankerDownloading = false;
+    }
+  });
   ipcMain.handle("runtime:install", async () => {
     try {
       await installModels(modelsDir(), (p) =>
@@ -429,6 +596,12 @@ function registerIpc(update: { install(): void; check(): void }) {
     if (!llm) throw new Error("The model is not ready.");
     return llm.transcribe(wav);
   });
+  ipcMain.handle("vision:attach", (_e, bytes: ArrayBuffer, name: string) =>
+    visionLibrary().attach(bytes, name),
+  );
+  ipcMain.handle("vision:preview", (_e, source: VisualSource) =>
+    visionLibrary().preview(source),
+  );
   ipcMain.handle("chat:cancel", (_e, turnId: string) =>
     turns.get(turnId)?.abort(),
   );
@@ -470,6 +643,7 @@ function registerIpc(update: { install(): void; check(): void }) {
         mode?: "documents" | "general";
         setIds?: number[];
         documentIds?: number[];
+        visuals?: VisualSource[];
       },
     ) => {
       const { turnId, text, history, speak } = req;
@@ -482,12 +656,38 @@ function registerIpc(update: { install(): void; check(): void }) {
           store.listSets().some((s) => s.id === id),
         );
         const hasDocuments = req.mode !== "general";
-        if (hasDocuments && !setIds.length)
+        if (
+          req.visuals &&
+          (!Array.isArray(req.visuals) || req.visuals.length > MAX_VISUALS)
+        )
+          throw new Error(
+            `Attach up to ${MAX_VISUALS} images or pages per question.`,
+          );
+        const visualSources = [...(req.visuals ?? [])];
+        const allowed = hasDocuments
+          ? setIds
+              .flatMap((id) => store.documents(id))
+              .filter(
+                (d) =>
+                  !req.documentIds?.length || req.documentIds.includes(d.id),
+              )
+          : [];
+        if (
+          !visualSources.length &&
+          allowed.length === 1 &&
+          isImagePath(allowed[0]!.path)
+        )
+          visualSources.push({
+            documentId: allowed[0]!.id,
+            version: allowed[0]!.version,
+          });
+        if (hasDocuments && !setIds.length && !visualSources.length)
           throw new Error(
             "Select a document set, or explicitly choose General chat.",
           );
         if (
           hasDocuments &&
+          !visualSources.length &&
           !setIds.some((id) =>
             store.listSets().some((s) => s.id === id && s.chunkCount > 0),
           )
@@ -495,17 +695,70 @@ function registerIpc(update: { install(): void; check(): void }) {
           throw new Error(
             "No searchable documents are ready in these sets. Wait for indexing or check the import report.",
           );
+        const vision = visionLibrary();
+        const initial = [];
+        for (const source of visualSources) {
+          send("chat:event", {
+            type: "status",
+            turnId,
+            status: "Preparing visual evidence",
+          });
+          initial.push(await vision.prepare(source, controller.signal));
+        }
+        const searchWarnings = new Set<string>();
+        const withSearchWarnings = (result: TurnResult): TurnResult => ({
+          ...result,
+          warnings: [
+            ...new Set([...(result.warnings ?? []), ...searchWarnings]),
+          ],
+        });
         const result = await runTurn(
           {
             llm,
+            remember: (history) =>
+              historyEvidence(store, history, setIds, req.documentIds),
+            review: (input) => reviewGrounding(llm!, input),
+            vision: {
+              initial,
+              inspect: allowed.some((d) => isVisualPath(d.path))
+                ? (documentId, page, signal) =>
+                    vision.prepare(
+                      { documentId, page },
+                      signal,
+                      allowed.map((d) => d.id),
+                    )
+                : undefined,
+            },
             analysis: documentTools(store, setIds, req.documentIds),
-            toolkit: hasDocuments
-              ? toolManager.agentTools({
-                  setIds,
-                  documentIds: req.documentIds ?? [],
-                })
-              : undefined,
-            search: (q) => search.search(setIds, q, 8, req.documentIds),
+            toolkit:
+              hasDocuments && allowed.length
+                ? toolManager.agentTools({
+                    setIds,
+                    documentIds: req.documentIds ?? [],
+                  })
+                : undefined,
+            search: (q, followUpIds) => {
+              const scopedIds = followUpIds?.filter((id) =>
+                allowed.some((d) => d.id === id),
+              );
+              if (scopedIds && !scopedIds.length) return Promise.resolve([]);
+              return search.search(setIds, q, 8, scopedIds ?? req.documentIds, {
+                signal: controller.signal,
+                onReranking: () => {
+                  if (reranker)
+                    send("chat:event", {
+                      type: "status",
+                      turnId,
+                      status:
+                        "Checking which passages best answer your question",
+                    });
+                },
+                onFallback: () =>
+                  searchWarnings.add(
+                    "The extra relevance check was unavailable, so this answer used standard search.",
+                  ),
+              });
+            },
             survey: (question) =>
               req.documentIds?.length ? null : search.survey(setIds, question),
             hasSelectedDocuments: hasDocuments,
@@ -517,7 +770,11 @@ function registerIpc(update: { install(): void; check(): void }) {
           { speak, signal: controller.signal },
           {
             evidence: (result) =>
-              send("chat:event", { type: "evidence", turnId, ...result }),
+              send("chat:event", {
+                type: "evidence",
+                turnId,
+                ...withSearchWarnings(result),
+              }),
             status: (status) =>
               send("chat:event", { type: "status", turnId, status }),
             delta: (t) =>
@@ -532,7 +789,11 @@ function registerIpc(update: { install(): void; check(): void }) {
               }),
           },
         );
-        send("chat:event", { type: "done", turnId, ...result });
+        send("chat:event", {
+          type: "done",
+          turnId,
+          ...withSearchWarnings(result),
+        });
       } catch (err) {
         const message = controller.signal.aborted
           ? "Stopped."
@@ -626,11 +887,10 @@ function registerIpc(update: { install(): void; check(): void }) {
     } finally {
       store = new Store(path);
       toolManager = createToolManager();
-      retriever = embedder
-        ? new Retriever(store, (q) => embedder!.embedQuery(q))
-        : null;
+      retriever = embedder ? makeRetriever(embedder) : null;
     }
     window?.reload();
+    if (state.phase === "ready") void startReranker();
     return true;
   });
 
@@ -760,6 +1020,7 @@ app.whenReady().then(async () => {
 
   const update = startUpdater((s) => send("update:state", s));
   registerIpc(update);
+  installApplicationMenu(importFromMenu);
   createWindow();
   importsReady = true;
   void flushDockImports();
@@ -779,5 +1040,6 @@ app.on("before-quit", () => {
   stopLibraryWorkers();
   stopToolWorkers();
   sidecars.forEach((s) => s.stop());
+  stopReranker();
   store?.close();
 });
