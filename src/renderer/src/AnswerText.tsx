@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import type { Citation } from "../../shared/types";
 import { codeBlocks, inlineCode } from "../../shared/code-text";
 import { CopyButton } from "./CopyButton";
@@ -95,9 +95,9 @@ export function AnswerText({
             </pre>
           </section>
         ) : (
-          <span key={`prose-${part.start}`}>
+          <Fragment key={`prose-${part.start}`}>
             {inline(part.text, part.start)}
-          </span>
+          </Fragment>
         ),
       )}
     </div>

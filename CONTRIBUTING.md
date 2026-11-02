@@ -103,6 +103,8 @@ npm run test:e2e
 
 `tests/citation-search-e2e.mjs` checks citation highlighting, next/previous navigation, keyboard shortcuts, panel scrolling, document text scope, literal search terms, and resetting search when switching citations. `tests/text-search.test.ts` covers Unicode offsets, wrapped phrases, and removal of indexing overlap so document matches are counted once.
 
+`tests/code-rendering-e2e.mjs` checks streamed and saved code blocks, inline code, copying exact snippets, inert HTML examples, and citations outside code. `tests/code-rendering.test.tsx` covers unfinished fences, whitespace preservation, array indices, evidence checks, and follow-up citation remapping. The shared parser in `src/shared/code-text.ts` keeps code separate from prose in both display and citation processing.
+
 To run an opt-in comparison against installed models:
 
 ```sh

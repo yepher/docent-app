@@ -2,7 +2,7 @@ import type { ChatMessage, Llm } from "./llm";
 import type { ChatTurn } from "../shared/types";
 import { hasToolProtocol } from "./answer-stream";
 import { isFollowUp } from "./evidence";
-import { mapProse, proseOnly } from "../shared/code-text";
+import { proseOnly } from "../shared/code-text";
 import {
   asksForSourceLocations,
   isReferenceOnly,
@@ -64,26 +64,27 @@ export function repairQuotedReferences(
   answer: string,
   sources: GroundingInput["sources"],
 ): string {
-  return mapProse(answer, (prose) =>
-    prose.replace(
-      /([“"])([^“”"]{20,})([”"])([.,;:!?]?\s*)\[(\d+)\]/g,
-      (
-        match,
-        open: string,
-        quote: string,
-        close: string,
-        gap: string,
-        number: string,
-      ) => {
-        if (sources.some((s) => s.n === Number(number))) return match;
-        const matches = sources.filter(
-          (s) => !s.visual && normalized(s.text).includes(normalized(quote)),
-        );
-        return matches.length === 1
-          ? `${open}${quote}${close}${gap}[${matches[0]!.n}]`
-          : match;
-      },
-    ),
+  const prose = proseOnly(answer);
+  return answer.replace(
+    /([“"])([^“”"]{20,})([”"])([.,;:!?]?\s*)\[(\d+)\]/g,
+    (
+      match,
+      open: string,
+      quote: string,
+      close: string,
+      gap: string,
+      number: string,
+      offset: number,
+    ) => {
+      if (prose[offset] !== open) return match;
+      if (sources.some((s) => s.n === Number(number))) return match;
+      const matches = sources.filter(
+        (s) => !s.visual && normalized(s.text).includes(normalized(quote)),
+      );
+      return matches.length === 1
+        ? `${open}${quote}${close}${gap}[${matches[0]!.n}]`
+        : match;
+    },
   );
 }
 
@@ -92,12 +93,17 @@ export function sourceIntegrityIssues(
   answer: string,
   sources: GroundingInput["sources"],
 ): string[] {
+  const original = answer;
   answer = proseOnly(answer);
   const issues: string[] = [];
   const refs = citations(answer);
   if (refs.some((n) => !sources.some((s) => s.n === n)))
     issues.push("The answer cites a source number that was not supplied.");
   for (const match of answer.matchAll(/[“"]([^“”"]{20,})[”"]/g)) {
+    const quote = original.slice(
+      match.index + 1,
+      match.index + match[0].length - 1,
+    );
     const boundary = answer.lastIndexOf("\n\n", match.index);
     const start = boundary < 0 ? 0 : boundary + 2;
     const end = answer.indexOf("\n\n", match.index! + match[0].length);
@@ -108,12 +114,10 @@ export function sourceIntegrityIssues(
     // Text read directly from an attached image has no searchable text to compare.
     if (supporting.some((s) => s.visual)) continue;
     if (
-      !supporting.some((s) =>
-        normalized(s.text).includes(normalized(match[1]!)),
-      )
+      !supporting.some((s) => normalized(s.text).includes(normalized(quote)))
     ) {
       issues.push(
-        `This quotation is not present in its cited passage: ${match[1]!.slice(0, 220)}`,
+        `This quotation is not present in its cited passage: ${quote.slice(0, 220)}`,
       );
     }
   }

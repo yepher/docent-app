@@ -33,6 +33,7 @@ const answer = (messages) => {
     return Array.isArray(content) ? 'The image shows a labeled diagram [1].' : 'The answer is in your documents [1]. An invented source is ignored.';
   }
   if (process.env.DOCENT_TEST_FORMAT_STREAM) return '**Overview** of the layers [1].\n\n**Encoder** uses **N = 6** layers, **self-attention**, and a **feed-forward network** [2].\n\n**Decoder** uses **masked attention**, **cross-attention**, and its own **feed-forward network** [1, 2].';
+  if (process.env.DOCENT_TEST_CODE_REPLY) return readFileSync(process.env.DOCENT_TEST_CODE_REPLY, 'utf8');
   const content = messages.at(-1)?.content;
   const last = Array.isArray(content) ? content.filter((p) => p.type === 'text').map((p) => p.text).join('\n') : String(content ?? '');
   if (process.env.DOCENT_TEST_REFERENCE_ONLY) return last.match(/^\[\d+\] .+ \(document ID \d+\)$/m)?.[0] ?? '[1]';
@@ -95,7 +96,7 @@ createServer(async (req, res) => {
       sentProtocolFault = true;
       reply = '<tool_call>\n<function=read_document>\n<parameter=documentId>1</parameter>\n</function>\n</tool_call>';
     }
-    for (const word of reply.split(process.env.DOCENT_TEST_PROTOCOL_FAULT || process.env.DOCENT_TEST_FORMAT_STREAM ? /(?<=.)/ : /(?<= )/)) {
+    for (const word of reply.split(process.env.DOCENT_TEST_PROTOCOL_FAULT || process.env.DOCENT_TEST_FORMAT_STREAM || process.env.DOCENT_TEST_CODE_REPLY ? /(?<=.)/ : /(?<= )/)) {
       res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: word } }] })}\n\n`);
       await new Promise((r) => setTimeout(r, 15));
     }

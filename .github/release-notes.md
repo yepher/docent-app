@@ -27,6 +27,7 @@ Docent is a voice and chat assistant that answers from your own documents, with 
 
 ## Answer reliability
 
+- Answers render fenced code blocks and inline code with monospace text. Blocks preserve indentation, show the language, scroll horizontally, and have a **Copy code** button. Citation cleanup no longer changes code indentation or interprets array indices as references.
 - Citation panels have a search bar that stays visible while scrolling, highlighted matches, a match count, and previous/next controls. Search the cited passage or the full document text with keyboard shortcuts.
 - Rechecks document answers with no citations or an explicit refusal against all retrieved passages. An unrelated earlier refusal is excluded from that retry; follow-ups keep their context. If the retry fails, the answer explains the evidence limitation.
 - Retries responses that contain only source headers or citation markers, with a clear fallback if the model still cannot answer. Source metadata no longer produces spurious factual-number warnings.
