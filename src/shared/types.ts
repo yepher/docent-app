@@ -1,6 +1,7 @@
 import type { ToolRunRecord, ToolsApi } from "./tools";
 import type { ImportsApi } from "./imports";
 import type { VisualSelection, VisualSource } from "./vision";
+import type { AnswerModePreference } from "./question-scope";
 
 export interface DocSet {
   id: number;
@@ -175,6 +176,7 @@ export interface SavedMessage {
   saved?: boolean;
 }
 export interface Conversation {
+  answerMode?: AnswerModePreference;
   visualKey?: string;
   id: string;
   title: string;

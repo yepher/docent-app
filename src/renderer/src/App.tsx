@@ -21,7 +21,9 @@ import type {
 import { isViewable } from "../../shared/files";
 import {
   idKey,
+  resolveAnswerMode,
   sameQuestionScope,
+  type AnswerModePreference,
   type QuestionScope,
 } from "../../shared/question-scope";
 import { LibrarySearch } from "./LibrarySearch";
@@ -590,7 +592,7 @@ function Chat({
   const questionInput = useRef<HTMLInputElement>(null);
   const attachmentGeneration = useRef(0);
   const [speak, setSpeak] = useState(false);
-  const [mode, setMode] = useState<"documents" | "general">("documents");
+  const [answerMode, setAnswerMode] = useState<AnswerModePreference>("auto");
   const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
   const [conversationScope, setConversationScope] =
     useState<QuestionScope | null>(null);
@@ -676,10 +678,12 @@ function Chat({
   );
 
   const selectedIds = sets.filter((s) => s.selected).map((s) => s.id);
+  const mode = resolveAnswerMode(answerMode, selectedIds, visuals.length > 0);
   const setKey = idKey(selectedIds);
   const documentIds =
     documentSelection.setKey === setKey ? documentSelection.ids : [];
   const nextScope: QuestionScope = {
+    answerMode,
     mode,
     setIds: selectedIds,
     documentIds,
@@ -758,6 +762,7 @@ function Chat({
     setReadError(null);
     setSessionId(c.id);
     setConversationScope({
+      answerMode: c.answerMode ?? c.mode,
       mode: c.mode,
       setIds: c.setIds,
       documentIds: c.documentIds ?? [],
@@ -767,7 +772,7 @@ function Chat({
       setKey,
       ids: idKey(c.setIds) === setKey ? (c.documentIds ?? []) : [],
     });
-    setMode(c.mode);
+    setAnswerMode(c.answerMode ?? c.mode);
     setMessages(c.messages);
     setDetail(null);
     setPanel("chat");
@@ -1024,7 +1029,7 @@ function Chat({
           {activeTurn && scopeChanged
             ? `Answering from: ${
                 conversationScope?.mode === "general"
-                  ? "General chat"
+                  ? "General knowledge"
                   : sets
                       .filter((s) => conversationScope?.setIds.includes(s.id))
                       .map((s) => s.name)
@@ -1033,7 +1038,7 @@ function Chat({
             : mode === "general"
               ? visuals.length
                 ? "General chat with attached images"
-                : "General chat · no document evidence"
+                : "General knowledge · no document evidence"
               : scope.length
                 ? `Answering from: ${scope.map((s) => s.name).join(", ")}`
                 : visuals.length
@@ -1070,10 +1075,13 @@ function Chat({
         <label>
           Answer mode{" "}
           <select
-            value={mode}
+            value={answerMode}
             disabled={Boolean(activeTurn)}
-            onChange={(e) => setMode(e.target.value as "documents" | "general")}
+            onChange={(e) =>
+              setAnswerMode(e.target.value as AnswerModePreference)
+            }
           >
+            <option value="auto">Automatic</option>
             <option value="documents">My documents only</option>
             <option value="general">General chat</option>
           </select>
@@ -1195,8 +1203,11 @@ function Chat({
         >
           {messages.length === 0 && (
             <p className="empty">
-              Ask a question across your documents. Select two documents above
-              to compare them, or search your library without AI.
+              {mode === "general" && !visuals.length
+                ? "Ask anything using the model’s general knowledge. General answers do not use your documents."
+                : visuals.length && !scope.length
+                  ? "Ask a question about the attached images or pages."
+                  : "Ask a question across your documents. Select two documents above to compare them, or search your library without AI."}
             </p>
           )}
           {messages.map((m) => {

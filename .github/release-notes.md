@@ -1,5 +1,11 @@
 Docent is a voice and chat assistant that answers from your own documents, with citations. It runs entirely on your computer.
 
+## Chat without documents
+
+- **Automatic** answer mode uses general knowledge when nothing is selected, and switches to document evidence when you select a set. The header clearly labels general-knowledge answers.
+- Mode changes start fresh context. Empty or failed selected sets and unsuccessful searches never silently fall back to general knowledge. Attached images/pages remain evidence.
+- **General chat** and **My documents only** remain available as explicit choices. Saved conversations remember Automatic mode.
+
 ## App menus
 
 - Docent menus include document and folder imports, standard editing and window controls, and About Docent.

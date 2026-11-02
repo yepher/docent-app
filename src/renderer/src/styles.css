@@ -576,16 +576,34 @@ input:not([type="checkbox"]) {
 .pronunciations li {
   display: grid;
   gap: 6px;
-  padding: 10px 0;
+  padding: 4px 0;
   border-bottom: 1px solid var(--line);
 }
-.pronunciations span {
-  flex: 1;
+.pronunciation-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   min-width: 0;
-  overflow-wrap: anywhere;
+}
+.pronunciation-word {
+  min-width: 0;
+  margin-right: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .pronunciations button {
   padding: 3px 8px;
+}
+.pronunciations .pronunciation-icon {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: transparent;
 }
 .pronunciations form, .pronunciations label {
   display: grid;

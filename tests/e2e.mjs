@@ -150,24 +150,24 @@ try {
   await page.getByRole('button', { name: 'Preview' }).click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByText('Pronunciations (1)').click();
-  await page.getByText('sounds like an sir').waitFor();
+  await page.locator('.pronunciations').getByTitle('answer sounds like an sir').waitFor();
   const pronunciationList = page.locator('.pronunciations');
-  await page.getByRole('button', { name: 'Test pronunciation for answer', exact: true }).click();
+  await page.getByRole('button', { name: 'Listen to pronunciation for answer', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('.pronunciations [role="status"]'));
   assert.equal(JSON.parse(readFileSync(ttsLog, 'utf8').trim().split('\n').at(-1)), 'an sir', 'Test speaks the saved pronunciation');
   await page.getByRole('button', { name: 'Edit pronunciation for answer', exact: true }).click();
   await page.getByLabel('Pronunciation for answer', {exact:true}).fill('ann ser');
   await page.screenshot({path: join(work,'pronunciation-edit.png')});
-  await page.getByRole('button', { name: 'Test pronunciation for answer', exact: true }).click();
+  await page.getByRole('button', { name: 'Listen to pronunciation for answer', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('.pronunciations [role="status"]'));
   assert.equal(JSON.parse(readFileSync(ttsLog, 'utf8').trim().split('\n').at(-1)), 'ann ser', 'Test speaks the unsaved edit');
   assert.equal((await page.evaluate(() => window.api.pronunciations.list()))[0].spoken, 'an sir', 'testing does not save a draft');
   await pronunciationList.getByRole('button', {name:'Cancel',exact:true}).click();
-  await page.getByText('sounds like an sir').waitFor();
+  await pronunciationList.getByTitle('answer sounds like an sir').waitFor();
   await page.getByRole('button', { name: 'Edit pronunciation for answer', exact: true }).click();
   await page.getByLabel('Pronunciation for answer', {exact:true}).fill('ann ser');
   await pronunciationList.getByRole('button', {name:'Save',exact:true}).click();
-  await page.getByText('sounds like ann ser').waitFor();
+  await pronunciationList.getByTitle('answer sounds like ann ser').waitFor();
   assert.equal((await page.evaluate(() => window.api.pronunciations.list()))[0].spoken, 'ann ser', 'Save updates the existing pronunciation');
   await page.screenshot({path: process.argv[5] ?? join(work,'pronunciations.png')});
 
@@ -208,7 +208,7 @@ try {
   // Unticking the only set must take documents out of the answer path.
   assert.ok(modelRequests().some((messages) => messages.some((m) => m.role === 'assistant') && messages.at(-1).content.includes('When do zebras graze again?')), 'unchanged sources preserve conversational history');
   await page.getByLabel('Use Wildlife').click();
-  await page.getByText('Select document sets to ask a question').waitFor();
+  await page.getByText('General knowledge · no document evidence').waitFor();
   await page.getByText('Sources changed.', { exact: false }).waitFor();
 
   // A PDF citation shows the page itself: real pixels, on the right page, with paging.
@@ -382,7 +382,7 @@ try {
   // Saved chats survive a renderer restart, and search works while models are unavailable.
   await page.reload();
   await page.getByText('Pronunciations (1)').click();
-  await page.getByText('sounds like ann ser').waitFor();
+  await page.locator('.pronunciations').getByTitle('answer sounds like ann ser').waitFor();
   await page.getByRole('button',{name:'Conversations',exact:true}).click();
   await page.getByRole('button',{name:/^What other research is referenced/}).click();
   await page.locator('.message.assistant .cite').first().waitFor();

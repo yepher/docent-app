@@ -59,10 +59,65 @@ export function PronunciationList({
       <ul>
         {entries.map((p) => (
           <li key={p.word}>
-            <span>
-              <strong>{p.word}</strong> <small>sounds like {p.spoken}</small>
-            </span>
-            {editing === p.word ? (
+            <div className="pronunciation-row">
+              <strong
+                className="pronunciation-word"
+                title={`${p.word} sounds like ${p.spoken}`}
+              >
+                {p.word}
+              </strong>
+              <button
+                type="button"
+                className="pronunciation-icon"
+                title="Listen"
+                aria-label={`Listen to pronunciation for ${p.word}`}
+                disabled={
+                  Boolean(busy) || (editing === p.word && !spoken.trim())
+                }
+                onClick={() => void test(p)}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path d="M8 5.5a1 1 0 0 1 1.5-.86l10 6.5a1 1 0 0 1 0 1.72l-10 6.5A1 1 0 0 1 8 18.5z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="pronunciation-icon"
+                title="Edit"
+                aria-label={`Edit pronunciation for ${p.word}`}
+                aria-expanded={editing === p.word}
+                disabled={Boolean(busy)}
+                onClick={() => {
+                  const close = editing === p.word;
+                  cancel();
+                  if (!close) {
+                    setEditing(p.word);
+                    setSpoken(p.spoken);
+                  }
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m15 5 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11z" />
+                </svg>
+              </button>
+            </div>
+            {editing === p.word && (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -86,14 +141,6 @@ export function PronunciationList({
                 </label>
                 <div className="actions">
                   <button
-                    type="button"
-                    aria-label={`Test pronunciation for ${p.word}`}
-                    disabled={Boolean(busy) || !spoken.trim()}
-                    onClick={() => void test(p)}
-                  >
-                    Test
-                  </button>
-                  <button
                     className="primary"
                     disabled={Boolean(busy) || !spoken.trim()}
                   >
@@ -106,42 +153,23 @@ export function PronunciationList({
                   >
                     Cancel
                   </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    aria-label={`Remove pronunciation for ${p.word}`}
+                    disabled={Boolean(busy)}
+                    onClick={() =>
+                      void attempt(p.word, async () => {
+                        await window.api.pronunciations.remove(p.word);
+                        cancel();
+                        onChanged();
+                      })
+                    }
+                  >
+                    Remove
+                  </button>
                 </div>
               </form>
-            ) : (
-              <div className="actions">
-                <button
-                  aria-label={`Edit pronunciation for ${p.word}`}
-                  disabled={Boolean(busy)}
-                  onClick={() => {
-                    cancel();
-                    setEditing(p.word);
-                    setSpoken(p.spoken);
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  aria-label={`Test pronunciation for ${p.word}`}
-                  disabled={Boolean(busy)}
-                  onClick={() => void test(p)}
-                >
-                  Test
-                </button>
-                <button
-                  aria-label={`Remove pronunciation for ${p.word}`}
-                  disabled={Boolean(busy)}
-                  onClick={() =>
-                    void attempt(p.word, async () => {
-                      await window.api.pronunciations.remove(p.word);
-                      player.current.stop();
-                      onChanged();
-                    })
-                  }
-                >
-                  ×
-                </button>
-              </div>
             )}
             {busy === p.word && <small role="status">Working…</small>}
             {error?.word === p.word && (
