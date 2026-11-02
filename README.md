@@ -6,7 +6,9 @@ It runs [LFM3-Omni-2B](https://huggingface.co/LiquidAI/LFM3-Omni-2B) through [ll
 
 ## Install
 
-Download the build for your platform from [Releases](https://github.com/yepher/docent-app/releases): `.dmg` for macOS, `.exe` for Windows, `.AppImage` or `.deb` for Linux. The app updates itself from new releases, except the `.deb`, which you update by installing the newer package.
+Download the build for your platform from [Releases](https://github.com/yepher/docent-app/releases): `.dmg` for macOS, `.exe` for Windows, `.AppImage` or `.deb` for Linux. Installed macOS, Windows and AppImage builds check for stable releases shortly after launch, every six hours, and when returning from a long sleep. New versions download in the background and install when you quit, or choose **Restart to update** when ready. Docent never restarts automatically while you work. macOS auto-update requires signed releases; `.deb` installations use the package manager or a newer download.
+
+Choose **Docent → Check for Updates…** on macOS, **Help → Check for Updates…** on Windows/Linux, or **Library backup & recovery → Check for updates (online)**. A manual check shows progress, confirms when you are up to date, or offers retry/download options. Offline background check failures stay quiet. Development builds do not contact the update server or install updates.
 
 On first run it downloads about 2.3 GB of models and verifies them. Allow at least 3 GB of free disk space for the models and, as a guide, 8 GB of memory. Your document library needs additional space.
 
@@ -87,7 +89,7 @@ Citation links and exact quotes help inspect evidence; they do not independently
 
 ## Network use
 
-The app connects to the internet for model downloads from Hugging Face (initial setup or the optional relevance model), update checks when you choose **Check for updates (online)**, and tool-repository operations you explicitly request. It does not automatically download the relevance model when upgrading an existing installation. There is no telemetry. Documents and questions stay on your computer. The model servers listen only on `127.0.0.1` and need a key generated at each launch.
+The app connects to the internet for model downloads from Hugging Face (initial setup or the optional relevance model), automatic app update checks and downloads from GitHub Releases, manual update checks, and tool-repository operations you explicitly request. It does not automatically download the relevance model when upgrading an existing installation. There is no telemetry. Documents and questions stay on your computer. The model servers listen only on `127.0.0.1` and need a key generated at each launch.
 
 ## Licenses
 

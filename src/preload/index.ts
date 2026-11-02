@@ -106,6 +106,7 @@ const api: Api = {
     pdf: (id, version) => ipcRenderer.invoke("docs:pdf", id, version),
   },
   update: {
+    state: () => ipcRenderer.invoke("update:state"),
     check: () => ipcRenderer.invoke("update:check"),
     onState: (cb) => subscribe("update:state", cb),
     install: () => ipcRenderer.invoke("update:install"),

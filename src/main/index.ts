@@ -450,7 +450,7 @@ function maintainLibrary() {
   }
 }
 
-function registerIpc(update: { install(): void; check(): void }) {
+function registerIpc(update: ReturnType<typeof startUpdater>) {
   ipcMain.handle("imports:drop", async (_event, paths: unknown) => {
     await importInbox.stage(paths);
   });
@@ -965,6 +965,7 @@ function registerIpc(update: { install(): void; check(): void }) {
     );
   });
 
+  ipcMain.handle("update:state", () => update.state());
   ipcMain.handle("update:check", () => update.check());
   ipcMain.handle("update:install", () => update.install());
   ipcMain.handle("update:releases", () => shell.openExternal(RELEASES_URL));
@@ -1020,7 +1021,14 @@ app.whenReady().then(async () => {
 
   const update = startUpdater((s) => send("update:state", s));
   registerIpc(update);
-  installApplicationMenu(importFromMenu);
+  installApplicationMenu(importFromMenu, async () => {
+    if (!window) createWindow();
+    const target = requireWindow();
+    if (target.isMinimized()) target.restore();
+    target.show();
+    target.focus();
+    await update.check();
+  });
   createWindow();
   importsReady = true;
   void flushDockImports();

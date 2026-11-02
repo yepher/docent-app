@@ -109,7 +109,10 @@ export interface IngestProgress {
 
 export type UpdateState =
   | { status: "idle" }
-  | { status: "downloading"; percent: number }
+  | { status: "checking" }
+  | { status: "up-to-date"; version: string }
+  | { status: "unsupported"; message: string }
+  | { status: "downloading"; version: string; percent: number }
   | { status: "ready"; version: string }
   | { status: "error"; message: string };
 
@@ -273,6 +276,7 @@ export interface Api {
     pdf(documentId: number, version?: string): Promise<ArrayBuffer>;
   };
   update: {
+    state(): Promise<UpdateState>;
     check(): Promise<void>;
     onState(cb: (s: UpdateState) => void): () => void;
     install(): Promise<void>;

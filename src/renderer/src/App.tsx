@@ -1763,25 +1763,81 @@ function PronouncePopover({
 
 function UpdateBanner() {
   const [state, setState] = useState<UpdateState>({ status: "idle" });
-  useEffect(() => api.update.onState(setState), []);
+  useEffect(() => {
+    let active = true;
+    let receivedEvent = false;
+    const off = api.update.onState((next) => {
+      receivedEvent = true;
+      setState(next);
+    });
+    // Recover an update that arrived before the window opened; don't overwrite a newer live event.
+    void api.update
+      .state()
+      .then((current) => {
+        if (active && !receivedEvent) setState(current);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      off();
+    };
+  }, []);
+  const run = (action: () => Promise<void>) => {
+    void action().catch((error) =>
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  };
+  const dismiss = (
+    <button onClick={() => setState({ status: "idle" })}>Dismiss</button>
+  );
+  if (state.status === "checking")
+    return (
+      <div className="update" role="status">
+        Checking for updates…
+      </div>
+    );
+  if (state.status === "downloading")
+    return (
+      <div className="update" role="status">
+        Downloading Docent {state.version} · {state.percent}%
+        <progress
+          aria-label="Downloading Docent update"
+          max={100}
+          value={state.percent}
+        />
+        <span>You can keep using Docent.</span>
+      </div>
+    );
   if (state.status === "ready") {
     return (
-      <div className="update">
-        Version {state.version} is ready.
-        <button onClick={() => void api.update.install()}>
+      <div className="update" role="status">
+        Docent {state.version} is ready. It will install when you quit.
+        <button onClick={() => run(api.update.install)}>
           Restart to update
         </button>
       </div>
     );
   }
-  if (state.status === "error") {
+  if (state.status === "up-to-date")
     return (
-      <div className="update">
-        Could not update automatically.
-        <button onClick={() => void api.update.openReleases()}>
+      <div className="update" role="status">
+        Docent {state.version} is up to date.{dismiss}
+      </div>
+    );
+  if (state.status === "error" || state.status === "unsupported") {
+    return (
+      <div className="update" role="status">
+        {state.message}
+        {state.status === "error" && (
+          <button onClick={() => run(api.update.check)}>Try again</button>
+        )}
+        <button onClick={() => run(api.update.openReleases)}>
           See releases
         </button>
-        <button onClick={() => setState({ status: "idle" })}>Dismiss</button>
+        {dismiss}
       </div>
     );
   }

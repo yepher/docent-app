@@ -6,6 +6,12 @@ Docent is a voice and chat assistant that answers from your own documents, with 
 - Help opens the GitHub project, releases, or a new issue form in your browser.
 - The macOS development launcher now uses Docent's name and icon in the menu bar and Dock.
 
+## Automatic updates
+
+- Installed builds check for stable releases after launch, every six hours, and after a long sleep. Updates download in the background and install when you quit or choose **Restart to update**.
+- **Check for Updates…** is available in the Docent menu on macOS and Help on Windows/Linux. Checks show progress, up-to-date feedback, or retry/download options. Offline background check failures stay quiet.
+- macOS automatic installation requires signed releases. Linux `.deb` users update with their package manager or download a newer package; development builds do not update themselves.
+
 ## Better document search
 
 - A local relevance model reranks the best keyword and embedding matches before the assistant answers. It stays within your selected sources and preserves citations.
