@@ -54,7 +54,7 @@ DOCENT_LLAMA_BIN="$PWD/tests/fake-llama-server.mjs" npm run dev
 
 ### Retrieval and answer quality
 
-Keyword and embedding search collect candidates. The optional local **Qwen3-Reranker-0.6B** checks up to 30 distinct candidates and selects the final eight passages. Multiple strong passages may come from the same document. Reranking stays within the selected scope and preserves citations; it cannot recover passages the initial search missed. Scores measure relevance, not answer confidence.
+Keyword and embedding search collect candidates. Standard search keeps their combined relevance order instead of forcing one passage per document, so a large unrelated set cannot displace stronger passages simply by containing more files. The optional local **Qwen3-Reranker-0.6B** checks up to 30 distinct candidates and selects the final eight passages. Multiple strong passages may come from the same document in either mode. Reranking stays within the selected scope and preserves citations; it cannot recover passages the initial search missed. Scores measure relevance, not answer confidence.
 
 The relevance model is approximately 639 MB. New installations include it in setup; existing installations add it explicitly through **Search quality**. Disabling it unloads it. Identical scoring requests are cached, document changes invalidate the relevant cache, and failures or a 20-second timeout fall back to hybrid search. Stop cancels retrieval. **Search library** remains a separate model-free keyword search.
 
@@ -62,7 +62,7 @@ The agent separates tool research from final answering. The final step receives 
 
 Follow-ups re-read earlier cited passages only when document versions and source selection still match. Citation numbers are remapped. Matched passages and surrounding context retain separate locations across formats. Source-header-only answers get one retry unless the user asked for sources. Known source metadata is excluded from factual-number warnings.
 
-Direct quotations and citation references are checked before a document answer is displayed or spoken. A broken quote or source number gets one repair attempt. These checks validate source integrity, not the model’s interpretation: the small model can still confuse status with opinion or attribute a statement incorrectly. Streaming text fragments and citation links must keep distinct React identities to avoid duplicated text.
+Direct quotations and citation references are checked before a document answer is displayed or spoken. Missing citations, a broken quote or a bad source number get one repair attempt. Opening refusals that claim the evidence cannot answer the question are also rechecked, even with a citation: one unrelated passage cannot establish absence across the others. For a standalone question, repair uses the current evidence without unrelated conversation history; genuine follow-ups retain context. If repair still cannot produce a cited answer, Docent explains the evidence limitation instead of repeating the refusal as fact. These checks validate source integrity, not the model’s interpretation: the small model can still confuse status with opinion or attribute a statement incorrectly. Streaming text fragments and citation links must keep distinct React identities to avoid duplicated text.
 
 ### Images and PDF pages
 
@@ -120,6 +120,8 @@ DOCENT_REAL_RERANK_EVAL=1 DOCENT_RERANKER_MODEL_DIR="/path/to/models" npm test -
 The relevance model directory defaults to `vendor/models`; the embedding directory uses `DOCENT_MODEL_DIR` as above. The suite starts the bundled runtime and checks 12 synthetic questions against 36 short passages, reporting first-result accuracy, reciprocal rank and latency. In the initial macOS arm64 run, first-result accuracy improved from 7/12 to 10/12 and mean reciprocal rank from 0.748 to 0.875, with about 1.3 seconds for enhanced retrieval. One question ranked worse. This is a small regression fixture, not a benchmark of the full document library or generated answer quality; longer passages and slower machines can take more time.
 
 `tests/answer-stream.test.ts` reproduces the leaked XML tool-call failure, including fragmented streaming, speech, bounded recovery and document pagination. `tests/answer-quality-e2e.mjs` exercises that failure and attributed forum answers through Electron. To replay the reported forum question against a **disposable SQLite backup** of an indexed library, set `DOCENT_FORUM_EVAL_SNAPSHOT=/path/to/copy.db` and run `npm test -- tests/forum-eval.test.ts`. Never point this evaluation at the live library: its database and tool manager may create evaluation records.
+
+`DOCENT_LIBRARY_EVAL_SNAPSHOT=/path/to/copy.db npm test -- tests/mixed-library-eval.test.ts` replays the Transformer question against a disposable backup containing the paper and unrelated documents. It checks Standard search in a fresh chat, after an unrelated refusal, and recovery of the reported uncited answer using the actual local models. The normal test suite also covers the same failure mechanisms with synthetic manual text, without requiring that corpus or installed models.
 
 ## Releasing
 

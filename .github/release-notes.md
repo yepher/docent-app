@@ -20,12 +20,14 @@ Docent is a voice and chat assistant that answers from your own documents, with 
 
 ## Better document search
 
+- Standard search preserves strong passages from the same document instead of pushing them behind weaker matches from other files.
 - A local relevance model reranks the best keyword and embedding matches before the assistant answers. It stays within your selected sources and preserves citations.
 - Open **Search quality** in the sidebar to enable or disable enhanced retrieval. Existing installations can add the 639 MB model once; your current models keep working offline until then.
 - New installations include the relevance model in setup. Scoring failures fall back to standard search, and Stop cancels retrieval.
 
 ## Answer reliability
 
+- Rechecks document answers with no citations or an explicit refusal against all retrieved passages. An unrelated earlier refusal is excluded from that retry; follow-ups keep their context. If the retry fails, the answer explains the evidence limitation.
 - Retries responses that contain only source headers or citation markers, with a clear fallback if the model still cannot answer. Source metadata no longer produces spurious factual-number warnings.
 - Fixes repeated bold text around citation links while an answer streams.
 - Follow-ups retain version-checked source passages and remap citation numbers. Matched passages and surrounding context keep separate locations across document formats.

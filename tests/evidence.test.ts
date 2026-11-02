@@ -170,6 +170,171 @@ describe("format-independent source context", () => {
 });
 
 describe("answer evidence review", () => {
+  it.each([
+    "The passage does not provide a definition. It only describes a design, but never states what it is in general [1].",
+    "There is no relevant information about heat exchangers in these sources [1].",
+    "This question cannot be answered based on the provided text [1].",
+  ])(
+    "rechecks a missing-evidence claim even when it cites one passage: %s",
+    async (draft) => {
+      let calls = 0;
+      const answer =
+        "A heat exchanger transfers thermal energy between fluids [2].";
+      const llm: Llm = {
+        async *chat(messages) {
+          calls++;
+          const data = JSON.parse(String(messages.at(-1)!.content));
+          expect(data.sources).toHaveLength(2);
+          yield { type: "text", text: answer };
+        },
+        async transcribe() {
+          return "";
+        },
+        async *speak() {},
+      };
+      expect(
+        await reviewGrounding(llm, {
+          ...input,
+          question: "What is a heat exchanger?",
+          answer: draft,
+          sources: [
+            {
+              n: 1,
+              text: "A toy named Exchanger was designed for an exhibition.",
+            },
+            {
+              n: 2,
+              text: "A heat exchanger transfers thermal energy between fluids.",
+            },
+          ],
+        }),
+      ).toBe(answer);
+      expect(calls).toBe(1);
+    },
+  );
+  it.each([
+    "The heat exchanger does not mix the two fluids [1].",
+    "The device cannot find a wireless access point [1].",
+    "No information is lost in the conversion [1].",
+    "Thermal energy moves between the fluids [1]. The passages do not provide a date for the experiment.",
+    "The note states: “The sources do not provide a date for the experiment.” [1]",
+  ])(
+    "keeps supported negative facts, quotations and partial answers: %s",
+    async (answer) => {
+      const chat = vi.fn();
+      const llm = { chat } as unknown as Llm;
+      expect(
+        await reviewGrounding(llm, {
+          ...input,
+          answer,
+          sources: [{ n: 1, text: answer }],
+        }),
+      ).toBe(answer);
+      expect(chat).not.toHaveBeenCalled();
+    },
+  );
+  it("recovers an uncited refusal on a new topic without repeating unrelated history or exposing the draft", async () => {
+    const output: string[] = [],
+      spoken: string[] = [];
+    const refusal =
+      "The sources do not contain any information about heat exchangers.";
+    const answer =
+      "A heat exchanger transfers thermal energy between fluids [1].";
+    const earlier: ChatTurn[] = [
+      { role: "user", content: "How many documents can you access?" },
+      {
+        role: "assistant",
+        content: "The sources do not provide the document count.",
+      },
+    ];
+    let calls = 0;
+    const llm: Llm = {
+      async *chat(messages, tools) {
+        calls++;
+        if (calls === 2) {
+          expect(tools).toEqual([]);
+          expect(output).toEqual([]);
+          expect(spoken).toEqual([]);
+          const data = JSON.parse(String(messages.at(-1)!.content));
+          expect(data.history).toEqual([]);
+          expect(data.sources[0].text).toContain("thermal energy");
+          expect(data.question).toBe("What is a heat exchanger?");
+        }
+        yield { type: "text", text: calls === 1 ? refusal : answer };
+      },
+      async transcribe() {
+        return "";
+      },
+      async *speak(text) {
+        spoken.push(text);
+      },
+    };
+    const result = await runTurn(
+      {
+        llm,
+        hasSelectedDocuments: true,
+        search: async () => [
+          {
+            ...passage,
+            text: "A heat exchanger transfers thermal energy between fluids.",
+          },
+        ],
+        review: (request) => reviewGrounding(llm, request),
+      },
+      "What is a heat exchanger?",
+      earlier,
+      { speak: true, signal: input.signal },
+      {
+        status() {},
+        audio() {},
+        delta(t) {
+          output.push(t);
+        },
+      },
+    );
+    expect(calls).toBe(2);
+    expect(result.text).toBe(answer);
+    expect(output.join("")).toBe(answer);
+    expect(spoken.join(" ")).not.toContain("do not contain");
+    expect(result.citations.filter((c) => c.cited)).toHaveLength(1);
+    expect(result.uncited).toBe(false);
+  });
+  it.each(["", " [1]"])(
+    "retries a refusal only once and preserves context for a real follow-up (citation: %s)",
+    async (reference) => {
+      let calls = 0;
+      const llm: Llm = {
+        async *chat(messages) {
+          calls++;
+          const data = JSON.parse(String(messages.at(-1)!.content));
+          expect(data.history).toEqual(
+            history.map(({ role, content }) => ({ role, content })),
+          );
+          yield {
+            type: "text",
+            text: "The documents do not contain that information." + reference,
+          };
+        },
+        async transcribe() {
+          return "";
+        },
+        async *speak() {},
+      };
+      expect(
+        await reviewGrounding(llm, {
+          ...input,
+          history,
+          question: "When did she say that?",
+          answer: "There is no date in the sources.",
+        }),
+      ).toBe(UNVERIFIED);
+      expect(calls).toBe(1);
+      expect(
+        await reviewGrounding(llm, { ...input, sources: [], answer: "Hello!" }),
+      ).toBe("Hello!");
+      expect(calls).toBe(1);
+    },
+  );
   it("corrects an earlier fabricated quotation before answering a follow-up", async () => {
     const chat = vi.fn(async function* () {
       yield { type: "text" as const, text: "This should not run" };

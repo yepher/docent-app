@@ -149,7 +149,6 @@ export class Retriever {
       return true;
     });
     let ranked = unique;
-    let reranked = false;
     if (this.rerank && unique.length > 1) {
       const shortlist = unique.slice(0, RERANK_CANDIDATES);
       try {
@@ -166,22 +165,15 @@ export class Retriever {
             .map((chunk, i) => ({ chunk, score: relevance[i]!, i }))
             .sort((a, b) => b.score - a.score || a.i - b.i)
             .map((r) => r.chunk);
-          reranked = true;
         }
       } catch {
         options.signal?.throwIfAborted();
         options.onFallback?.();
       }
     }
-    const documents = new Set<number>();
-    const diverse = unique.filter(
-      (c) => !documents.has(c.documentId) && documents.add(c.documentId),
-    );
-    const chosen = (
-      reranked
-        ? ranked
-        : [...diverse, ...unique.filter((c) => !diverse.includes(c))]
-    ).slice(0, limit);
+    // Preserve relevance in both modes. Promoting one passage per document first
+    // crowds out strong passages from a small source amid a large unrelated set.
+    const chosen = ranked.slice(0, limit);
     // Background imports can continue, but a changed source must not be joined to new neighbors.
     if (this.store.generation !== generation) {
       const current = new Map(

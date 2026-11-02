@@ -43,6 +43,7 @@ const CHAT_PROMPT =
 const RAG_PROMPT = `You answer questions using the numbered sources provided.
 Rules:
 - Use only facts found in the sources.
+- Sources can discuss different subjects or meanings of the same word. Use the passages that answer this question; unrelated passages do not invalidate relevant ones. Check all supplied passages before saying the evidence is insufficient.
 - Answer the question with information from the passage text. Source headers and document IDs are navigation aids, not an answer, unless the user explicitly asks for source locations.
 - After each fact, cite its source number in square brackets, like [1] or [2, 3].
 - Keep citations inside your sentences. Do not end with a list of sources; the app shows them.

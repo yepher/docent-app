@@ -183,6 +183,38 @@ describe("local reranker client", () => {
 });
 
 describe("reranked retrieval", () => {
+  it.each([false, true])(
+    "keeps strong passages from a small selected set ahead of unrelated documents (reranker failure: %s)",
+    async (failedReranker) => {
+      const { store, add, retriever, setId } = fixture();
+      const wanted = add("Operating manual", [
+        "A heat exchanger transfers thermal energy between fluids.",
+        "A heat exchanger keeps its hot and cold fluids in separate channels.",
+      ]);
+      const largeSet = store.createSet("Other documents").id;
+      for (let i = 0; i < 20; i++)
+        add(
+          `Unrelated ${i}`,
+          [`The project budget for department ${i} was approved.`],
+          largeSet,
+        );
+      const hits = await retriever(
+        failedReranker
+          ? async () => {
+              throw new Error("Unavailable");
+            }
+          : undefined,
+      ).search([setId, largeSet], "What is a heat exchanger?", 2);
+      expect(hits.map((h) => h.documentId)).toEqual([wanted, wanted]);
+      expect(new Set(hits.map((h) => h.page))).toEqual(new Set([1, 2]));
+      expect(hits.every((h) => h.version === "Operating manual-v1")).toBe(true);
+      expect(
+        (
+          await retriever().search([largeSet], "What is a heat exchanger?", 2)
+        ).some((h) => h.documentId === wanted),
+      ).toBe(false);
+    },
+  );
   it("promotes relevant passages even when both come from one document, keeping locations and versions", async () => {
     const { add, retriever, setId } = fixture();
     add("Distractor", ["Reset means erasing projects."]);
