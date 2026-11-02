@@ -1,5 +1,6 @@
 import type { ChatTurn, Citation } from "../shared/types";
 import type { Store, StoredChunk } from "./store";
+import { mapProse } from "../shared/code-text";
 
 /** Keep source boundaries and locations visible. No document-format assumptions. */
 export function withSourceContext(
@@ -135,20 +136,24 @@ export function remapHistory(
     content:
       turn.role === "user"
         ? turn.content
-        : turn.content.replace(
-            /\[(\d+(?:\s*,\s*\d+)*)\]/g,
-            (_match, numbers: string) => {
-              const valid =
-                i === lastAssistant
-                  ? numbers
-                      .split(",")
-                      .map(Number)
-                      .flatMap((n) => (mapping.has(n) ? [mapping.get(n)!] : []))
-                  : [];
-              return valid.length
-                ? `[${valid.join(", ")}]`
-                : "(prior citation unavailable)";
-            },
+        : mapProse(turn.content, (prose) =>
+            prose.replace(
+              /\[(\d+(?:\s*,\s*\d+)*)\]/g,
+              (_match, numbers: string) => {
+                const valid =
+                  i === lastAssistant
+                    ? numbers
+                        .split(",")
+                        .map(Number)
+                        .flatMap((n) =>
+                          mapping.has(n) ? [mapping.get(n)!] : [],
+                        )
+                    : [];
+                return valid.length
+                  ? `[${valid.join(", ")}]`
+                  : "(prior citation unavailable)";
+              },
+            ),
           ),
   }));
 }

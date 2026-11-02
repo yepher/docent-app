@@ -2,6 +2,7 @@ import type { ChatMessage, Llm } from "./llm";
 import type { ChatTurn } from "../shared/types";
 import { hasToolProtocol } from "./answer-stream";
 import { isFollowUp } from "./evidence";
+import { mapProse, proseOnly } from "../shared/code-text";
 import {
   asksForSourceLocations,
   isReferenceOnly,
@@ -33,13 +34,13 @@ const normalized = (text: string) =>
     .replace(/ +([.,;:!?])/g, "$1")
     .trim();
 const citations = (text: string) =>
-  [...text.matchAll(/\[(\d+(?:\s*,\s*\d+)*)\]/g)].flatMap((m) =>
+  [...proseOnly(text).matchAll(/\[(\d+(?:\s*,\s*\d+)*)\]/g)].flatMap((m) =>
     m[1]!.split(",").map(Number),
   );
 
 /** Recheck an opening refusal, not negative facts, source quotations or gaps after a partial answer. */
 function claimsMissingEvidence(text: string): boolean {
-  const plain = text
+  const plain = proseOnly(text)
     .replace(/“[^”]*”|"[^"]*"/g, "[quotation]")
     .replace(/[’]/g, "'")
     .replace(/[*_`]/g, "")
@@ -63,24 +64,26 @@ export function repairQuotedReferences(
   answer: string,
   sources: GroundingInput["sources"],
 ): string {
-  return answer.replace(
-    /([“"])([^“”"]{20,})([”"])([.,;:!?]?\s*)\[(\d+)\]/g,
-    (
-      match,
-      open: string,
-      quote: string,
-      close: string,
-      gap: string,
-      number: string,
-    ) => {
-      if (sources.some((s) => s.n === Number(number))) return match;
-      const matches = sources.filter(
-        (s) => !s.visual && normalized(s.text).includes(normalized(quote)),
-      );
-      return matches.length === 1
-        ? `${open}${quote}${close}${gap}[${matches[0]!.n}]`
-        : match;
-    },
+  return mapProse(answer, (prose) =>
+    prose.replace(
+      /([“"])([^“”"]{20,})([”"])([.,;:!?]?\s*)\[(\d+)\]/g,
+      (
+        match,
+        open: string,
+        quote: string,
+        close: string,
+        gap: string,
+        number: string,
+      ) => {
+        if (sources.some((s) => s.n === Number(number))) return match;
+        const matches = sources.filter(
+          (s) => !s.visual && normalized(s.text).includes(normalized(quote)),
+        );
+        return matches.length === 1
+          ? `${open}${quote}${close}${gap}[${matches[0]!.n}]`
+          : match;
+      },
+    ),
   );
 }
 
@@ -89,6 +92,7 @@ export function sourceIntegrityIssues(
   answer: string,
   sources: GroundingInput["sources"],
 ): string[] {
+  answer = proseOnly(answer);
   const issues: string[] = [];
   const refs = citations(answer);
   if (refs.some((n) => !sources.some((s) => s.n === n)))

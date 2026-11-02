@@ -1,10 +1,4 @@
-import {
-  type CSSProperties,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import type {
   Conversation,
   ImportReport,
@@ -34,6 +28,7 @@ import { SourceDetail } from "./SourceDetail";
 import { TopicMapView } from "./TopicMapView";
 import { Pacer, Player, Recorder } from "./audio";
 import { CopyButton } from "./CopyButton";
+import { AnswerText } from "./AnswerText";
 import { DropImport } from "./DropImport";
 import { SearchQuality } from "./SearchQuality";
 import {
@@ -532,43 +527,6 @@ function SetDetail({
       </ul>
     </div>
   );
-}
-
-/** Renders answer text as plain text. Citation markers become buttons; nothing is ever parsed as HTML. */
-function AnswerText({
-  message,
-  onCite,
-}: {
-  message: Message;
-  onCite: (c: Citation) => void;
-}) {
-  const parts: ReactNode[] = [];
-  let last = 0;
-  for (const match of message.text.matchAll(/\[(\d+(?:\s*,\s*\d+)*)\]/g)) {
-    parts.push(
-      ...strongText(message.text.slice(last, match.index), `text-${last}`),
-    );
-    for (const n of match[1]!.split(",").map(Number)) {
-      const citation = message.citations?.find((c) => c.n === n);
-      parts.push(
-        citation ? (
-          <button
-            key={`${match.index}-${n}`}
-            className="cite"
-            title={citation.title}
-            onClick={() => onCite(citation)}
-          >
-            {n}
-          </button>
-        ) : (
-          <sup key={`${match.index}-${n}`}>{n}</sup>
-        ),
-      );
-    }
-    last = match.index + match[0].length;
-  }
-  parts.push(...strongText(message.text.slice(last), `text-${last}`));
-  return <div className="text">{parts}</div>;
 }
 
 function Chat({
@@ -1769,16 +1727,4 @@ function LibraryTools() {
       </p>
     </details>
   );
-}
-
-function strongText(text: string, prefix = "text"): ReactNode[] {
-  return text
-    .split(/(\*\*[^*]+\*\*)/g)
-    .map((part, i) =>
-      part.startsWith("**") && part.endsWith("**") ? (
-        <strong key={`${prefix}-${i}`}>{part.slice(2, -2)}</strong>
-      ) : (
-        part
-      ),
-    );
 }

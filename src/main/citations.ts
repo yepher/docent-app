@@ -1,4 +1,5 @@
 import { withoutSourceMetadata, type SourceMetadata } from "./source-metadata";
+import { mapProse, proseOnly } from "../shared/code-text";
 
 const MARKER = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
 
@@ -11,21 +12,23 @@ export function resolveCitations(
   sourceCount: number,
 ): { text: string; cited: Set<number> } {
   const cited = new Set<number>();
-  const cleaned = text.replace(MARKER, (_, list: string) => {
-    const valid = list
-      .split(",")
-      .map((n) => Number(n.trim()))
-      .filter((n) => n >= 1 && n <= sourceCount);
-    valid.forEach((n) => cited.add(n));
-    return valid.length > 0 ? `[${valid.join(", ")}]` : "";
-  });
-  return {
-    text: cleaned
+  const cleaned = mapProse(text, (prose, start) => {
+    let result = prose
+      .replace(MARKER, (_, list: string) => {
+        const valid = list
+          .split(",")
+          .map((n) => Number(n.trim()))
+          .filter((n) => n >= 1 && n <= sourceCount);
+        valid.forEach((n) => cited.add(n));
+        return valid.length > 0 ? `[${valid.join(", ")}]` : "";
+      })
       .replace(/ +([.,;:!?])/g, "$1")
-      .replace(/ {2,}/g, " ")
-      .trim(),
-    cited,
-  };
+      .replace(/ {2,}/g, " ");
+    if (start === 0) result = result.trimStart();
+    if (start + prose.length === text.length) result = result.trimEnd();
+    return result;
+  });
+  return { text: cleaned, cited };
 }
 
 export interface SpeechPart {
@@ -99,7 +102,7 @@ export function evidenceIssues(
   if (!sources.size) return [];
   const splitter = new SentenceSplitter();
   const sentences = [
-    ...splitter.push(withoutSourceMetadata(answer, metadata)),
+    ...splitter.push(withoutSourceMetadata(proseOnly(answer), metadata)),
     ...splitter.flush(),
   ].map((p) => p.raw.trim());
   const issues = new Set<string>();

@@ -27,6 +27,7 @@ import {
   type GroundingInput,
 } from "./grounding";
 import { sourceLocation as location } from "./source-metadata";
+import { proseOnly } from "../shared/code-text";
 
 const MAX_ROUNDS = 3;
 const HISTORY_TURNS = 6;
@@ -911,8 +912,8 @@ export async function runTurn(
   } else if (deps.review && sources.size) {
     events.status("Checking the answer against its sources");
     const used = new Set(
-      [...answer.matchAll(/\[(\d+(?:\s*,\s*\d+)*)\]/g)].flatMap((m) =>
-        m[1]!.split(",").map(Number),
+      [...proseOnly(answer).matchAll(/\[(\d+(?:\s*,\s*\d+)*)\]/g)].flatMap(
+        (m) => m[1]!.split(",").map(Number),
       ),
     );
     let chars = 0;
