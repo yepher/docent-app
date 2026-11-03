@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 import { _electron as electron } from "playwright-core";
+import { DatabaseSync } from "node:sqlite";
 const root = resolve(import.meta.dirname, "..");
 const work = mkdtempSync(join(tmpdir(), "docent-vision-e2e-"));
 const chatLog = join(work, "chat.jsonl");
@@ -20,6 +21,9 @@ ctx.fillStyle = "white";
 ctx.font = "bold 32px sans-serif";
 ctx.fillText("FILTER", 100, 200);
 ctx.fillText("PUMP", 465, 200);
+ctx.fillStyle = "black";
+ctx.font = "22px sans-serif";
+ctx.fillText("Hansen Home Inspections 630 661-0897", 40, 350);
 const png = canvas.toBuffer("image/png");
 const imagePath = join(work, "diagram.png");
 writeFileSync(imagePath, png);
@@ -57,6 +61,7 @@ const app = await electron.launch({
     ...process.env,
     DOCENT_LLAMA_BIN: join(root, "tests/fake-llama-server.mjs"),
     DOCENT_TEST_CHAT_LOG: chatLog,
+    DOCENT_TEST_VISION_OCR: "1",
   },
 });
 try {
@@ -71,9 +76,16 @@ try {
       problems.push(message.text());
   });
   await page.setViewportSize({ width: 1250, height: 900 });
-  await page.waitForFunction(
-    async () => (await window.api.runtime.state()).phase === "ready",
-  );
+  const deadline = Date.now() + 30000;
+  while (
+    !(await page.evaluate(
+      async () => (await window.api.runtime.state()).phase === "ready",
+    ))
+  ) {
+    assert.ok(Date.now() < deadline, "Model did not become ready");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  await page.getByLabel("Speak replies").uncheck();
   // Import PNG, JPEG and PDF through the same drop chooser used by the Dock.
   const cdp = await page.context().newCDPSession(page);
   for (const type of ["dragEnter", "dragOver", "drop"])
@@ -93,6 +105,20 @@ try {
   await page.getByText("3 files", { exact: true }).waitFor();
   const [set] = await page.evaluate(() => window.api.sets.list());
   assert.equal(set.failedCount, 0);
+  // Deterministic OCR errors; this checks evidence handling, not model/OCR accuracy.
+  const documents = await page.evaluate(
+    (id) => window.api.sets.documents(id),
+    set.id,
+  );
+  const imageDocument = documents.find((d) => d.title === "diagram.png");
+  const database = new DatabaseSync(join(work, "profile", "library.db"));
+  database
+    .prepare("UPDATE chunks SET text=? WHERE document_id=?")
+    .run(
+      "Image: diagram.png\nHansen Hom Tuspections\n620 661-0097",
+      imageDocument.id,
+    );
+  database.close();
   await page.getByRole("button", { name: /Visual manuals/ }).click();
   await page.getByRole("button", { name: "diagram.png", exact: true }).click();
   await page.getByRole("button", { name: "Read offline", exact: true }).click();
@@ -109,6 +135,32 @@ try {
   await ask("What is on this image?");
   await page.locator(".message.assistant .cite").last().click();
   assert.equal(await page.locator(".visual-image img").count(), 1);
+  await ask("What is the phone number?");
+  const answer = page.locator(".message.assistant").last();
+  assert.match(await answer.locator(".text").innerText(), /630 661-0897/);
+  assert.equal(await answer.locator(".evidence-warning").count(), 1);
+  assert.match(
+    await answer.locator(".evidence-warning").innerText(),
+    /automatic text extraction/,
+  );
+  assert.doesNotMatch(await answer.innerText(), /does not appear verbatim/);
+  await answer.locator(".cite").first().click();
+  await page
+    .getByRole("heading", { name: "Original image", exact: true })
+    .waitFor();
+  await page
+    .locator(".source-detail summary")
+    .filter({ hasText: "Automatic text extraction (OCR)" })
+    .waitFor();
+  assert.match(
+    await page.locator(".source-detail blockquote").innerText(),
+    /620 661-0097/,
+  );
+  assert.match(
+    await page.locator(".source-detail").innerText(),
+    /OCR is an automatic transcription/,
+  );
+  await page.screenshot({ path: join(work, "ocr-comparison.png") });
   rmSync(imagePath); // Citations keep working from the saved original.
   await page
     .locator(".source-detail")
@@ -178,7 +230,10 @@ try {
   );
   await page.getByLabel("Remove attachment screenshot.png").waitFor();
   await page.getByLabel("Use Visual manuals").click();
-  await page.waitForFunction(() => !document.querySelector('input[aria-label="Use Visual manuals"]').checked);
+  await page.waitForFunction(
+    () =>
+      !document.querySelector('input[aria-label="Use Visual manuals"]').checked,
+  );
   await ask("What does this screenshot show?");
   const source = await page.evaluate(async () => {
     const c = (await window.api.chat.conversations()).find(
@@ -205,21 +260,17 @@ try {
   await page.screenshot({ path: join(work, "vision.png") });
   // File picker and validation also work without a local file path in the renderer.
   await page.getByLabel("Remove attachment screenshot.png").click();
-  await page
-    .getByLabel("Choose images")
-    .setInputFiles({
-      name: "photo.jpeg",
-      mimeType: "image/jpeg",
-      buffer: canvas.toBuffer("image/jpeg"),
-    });
+  await page.getByLabel("Choose images").setInputFiles({
+    name: "photo.jpeg",
+    mimeType: "image/jpeg",
+    buffer: canvas.toBuffer("image/jpeg"),
+  });
   await page.getByLabel("Remove attachment photo.jpeg").waitFor();
-  await page
-    .getByLabel("Choose images")
-    .setInputFiles({
-      name: "invalid.png",
-      mimeType: "image/png",
-      buffer: Buffer.from("not an image"),
-    });
+  await page.getByLabel("Choose images").setInputFiles({
+    name: "invalid.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("not an image"),
+  });
   await page
     .getByRole("alert")
     .filter({ hasText: "Only PNG and JPEG" })

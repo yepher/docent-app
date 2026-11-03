@@ -40,6 +40,7 @@ Docent is a voice and chat assistant that answers from your own documents, with 
 
 ## Visual document questions
 
+- Image citations show the original first and clearly label **Automatic text extraction (OCR)**. When the model has seen the same image/page version, its extracted text shares that citation. Detected differences in numbers or quoted wording get a comparison notice instead of misleading missing-number warnings; neither reading is treated as automatically correct.
 - Open an offline PDF, navigate to a page, and choose **Ask about this page** to ask about diagrams, charts, tables, or layout.
 - Import PNG/JPEG images, attach images beside Send, or paste a screenshot into the question. Up to three images/pages can accompany a question and its follow-ups.
 - Answers link to image/page evidence. Pasted images stay available in saved conversations and library backups.

@@ -36,6 +36,7 @@ const answer = (messages) => {
   if (process.env.DOCENT_TEST_CODE_REPLY) return readFileSync(process.env.DOCENT_TEST_CODE_REPLY, 'utf8');
   const content = messages.at(-1)?.content;
   const last = Array.isArray(content) ? content.filter((p) => p.type === 'text').map((p) => p.text).join('\n') : String(content ?? '');
+  if (process.env.DOCENT_TEST_VISION_OCR && last.includes('What is the phone number?')) return 'The phone number is 630 661-0897 [1]. The image reads "Hansen Home Inspections" [1].';
   if (process.env.DOCENT_TEST_REFERENCE_ONLY) return last.match(/^\[\d+\] .+ \(document ID \d+\)$/m)?.[0] ?? '[1]';
   if (Array.isArray(content) && content.some((p) => p.type === 'image_url')) return 'The image shows a labeled diagram [1].';
   if (last.includes('Topic passages:')) return 'Name: Sample subject\nSummary: These passages share a sample subject.';

@@ -12,6 +12,7 @@ import { isCommonWord } from "./topics";
 import type { VisualSource } from "../shared/vision";
 
 export interface StoredChunk {
+  extraction?: import("../shared/vision").TextExtraction;
   context?: {
     text: string;
     page: number | null;

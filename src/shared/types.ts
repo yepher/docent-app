@@ -25,6 +25,8 @@ export interface DocumentRow {
 }
 
 export interface Citation {
+  extraction?: import("./vision").TextExtraction;
+  readingWarning?: string;
   /** Stable indexed passage identity, revalidated before reuse in another answer. */
   passageId?: number;
   visual?: VisualSource;

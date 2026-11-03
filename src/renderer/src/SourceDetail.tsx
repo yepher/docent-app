@@ -1,6 +1,11 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { Citation } from "../../shared/types";
-import { isImagePath, type VisualSource } from "../../shared/vision";
+import {
+  citationExtraction,
+  extractionLabel,
+  isImagePath,
+  type VisualSource,
+} from "../../shared/vision";
 import {
   textMatches,
   documentTextBlocks,
@@ -46,6 +51,7 @@ export function SourceDetail({
         })
       : null;
   const showPage = citation.page !== null && !pageFailed;
+  const extraction = useMemo(() => citationExtraction(citation), [citation]);
 
   useEffect(() => {
     // Reset find when opening another citation, while preserving the loaded PDF/image.
@@ -73,8 +79,11 @@ export function SourceDetail({
   }, [scope, passages, loadError, citation.documentId]);
 
   const blocks = useMemo(
-    () => (scope === "document" ? (passages ?? []) : [citation]),
-    [scope, passages, citation],
+    () =>
+      scope === "document"
+        ? (passages ?? [])
+        : [{ ...citation, excerpt: extraction?.text ?? citation.excerpt }],
+    [scope, passages, citation, extraction],
   );
   const found = useMemo(() => {
     let count = 0;
@@ -262,6 +271,9 @@ export function SourceDetail({
         </p>
       )}
       {citation.warning && <p className="warning">{citation.warning}</p>}
+      {citation.readingWarning && (
+        <p className="evidence-warning">{citation.readingWarning}</p>
+      )}
       {scope === "document" ? (
         <section
           className="source-document-text"
@@ -298,12 +310,42 @@ export function SourceDetail({
         </section>
       ) : (
         <>
+          {imageSource && (
+            <section className="original-image" aria-label="Original image">
+              <h4>Original image</h4>
+              {citation.n > 0 && (
+                <p className="fine">
+                  {citation.visual
+                    ? "The model received this image as well as any extracted text shown below."
+                    : "This answer used extracted text. The original image is shown here for comparison."}
+                </p>
+              )}
+              {onAsk && (
+                <button
+                  className="ask-visual"
+                  onClick={() => onAsk(imageSource, citation.title)}
+                >
+                  Ask about this image
+                </button>
+              )}
+              <VisualImage source={imageSource} title={citation.title} />
+            </section>
+          )}
           <details open className="evidence" ref={evidence}>
             <summary>
-              {citation.visual
-                ? "Visual evidence"
-                : "Passage used for this answer"}
+              {extraction
+                ? extractionLabel(extraction.kind)
+                : citation.visual
+                  ? "Visual evidence"
+                  : "Passage used for this answer"}
             </summary>
+            {extraction && (
+              <p className="fine">
+                {extraction.kind === "ocr"
+                  ? "OCR is an automatic transcription and can misread handwriting, words, or digits. It may differ from the model’s visual reading. Compare it with the original image."
+                  : "Text extracted from this page may contain errors or omissions. Compare it with the original page."}
+              </p>
+            )}
             <blockquote>{text(0)}</blockquote>
           </details>
           {showPage ? (
@@ -324,18 +366,6 @@ export function SourceDetail({
                   : undefined
               }
             />
-          ) : imageSource ? (
-            <>
-              {onAsk && (
-                <button
-                  className="ask-visual"
-                  onClick={() => onAsk(imageSource, citation.title)}
-                >
-                  Ask about this image
-                </button>
-              )}
-              <VisualImage source={imageSource} title={citation.title} />
-            </>
           ) : (
             pageFailed && (
               <p className="fine">

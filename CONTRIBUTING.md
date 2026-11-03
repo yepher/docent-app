@@ -86,6 +86,8 @@ Originals are copied into the SQLite library alongside indexed passages, convers
 
 OCR is bundled, English-only, and automatic for pages without a text layer. Complex tables, handwriting, and mixed text/image pages need checking. Markdown HTML/front matter is ignored; JSON and XML files over 1 MB are treated as data exports and skipped.
 
+Visual citations group the original image/page and its extracted text only when the model received pixels for that exact document version and page. Extraction text remains available alongside the original. Reading notices compare numbers and quoted wording; they do not independently verify pixels or prove either reading correct. `tests/visual-evidence.test.ts`, `tests/vision.test.ts`, and `tests/vision-e2e.mjs` cover OCR disagreement, citation grouping, version/page isolation, and the comparison panel using deterministic inference fixtures.
+
 Topic maps are built on demand in a worker. Dots represent passages; proximity reflects meaning. Topic naming yields to active questions.
 
 ## Testing and evaluation

@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import type { VisualSelection, VisualSource } from "../shared/vision";
-import { isImagePath, isVisualPath, MAX_IMAGE_BYTES } from "../shared/vision";
+import {
+  cleanImageExtraction,
+  extractionLabel,
+  isImagePath,
+  isVisualPath,
+  MAX_IMAGE_BYTES,
+} from "../shared/vision";
 import type { Store, StoredChunk } from "./store";
 import { imageFormat, renderImage, renderPdfPage } from "./vision-render";
 import type { ToolDefinition } from "./llm";
@@ -187,6 +193,10 @@ export class VisionLibrary {
       .map((c) => c.text)
       .join("\n")
       .slice(0, 6000);
+    const extraction = {
+      kind: page === undefined ? ("ocr" as const) : ("document-text" as const),
+      text: page === undefined ? cleanImageExtraction(text) : text,
+    };
     return {
       source: canonical,
       imageUrl: dataUrl(pixels),
@@ -197,7 +207,8 @@ export class VisionLibrary {
         page: page ?? null,
         line: null,
         visual: canonical,
-        text: `Visual evidence: ${page ? `PDF page ${page}` : "image"}. The actual image was supplied to the model.${text ? `\nExtracted text (may be incomplete):\n${text}` : " No extracted text is available."}`,
+        extraction,
+        text: `Visual evidence: ${page ? `PDF page ${page}` : "image"}. The actual image was supplied to the model.${text ? `\n${extractionLabel(extraction.kind)} (may contain errors or omissions; not a verified transcription):\n${text}` : " No extracted text is available."}`,
       },
     };
   }

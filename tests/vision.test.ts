@@ -184,6 +184,49 @@ describe("offline visual evidence", () => {
 });
 
 describe("vision in questions", () => {
+  it("keeps the correct visual answer when OCR misreads digits, with one image citation and a reading notice", async () => {
+    const { store, source, doc } = fixture();
+    store.db
+      .prepare("UPDATE chunks SET text=? WHERE document_id=?")
+      .run("Image: diagram.png\nHansen Hom Tuspections\n620 661-0097", doc.id);
+    const visual = await new VisionLibrary(store).prepare(source);
+    // Deliberately use the old duplicate OCR number to test reconciliation too.
+    const { llm, seen } = scripted([
+      'The number is 630 661-0897 [2]. It says "Hansen Home Inspections" [1].',
+    ]);
+    const review = vi.fn(
+      async (input: import("../src/main/grounding").GroundingInput) =>
+        input.answer,
+    );
+    const result = await runTurn(
+      {
+        llm,
+        hasSelectedDocuments: true,
+        search: async () => store.documentChunks(doc.id),
+        vision: { initial: [visual] },
+        review,
+      },
+      "What is the phone number?",
+      [],
+      options(),
+      events,
+    );
+    expect(result.text).toContain("630 661-0897 [1]");
+    expect(result.text).not.toContain("[2]");
+    expect(result.citations).toHaveLength(1);
+    expect(result.citations[0]!.visual).toEqual(source);
+    expect(result.citations[0]!.extraction?.text).toContain("620 661-0097");
+    expect(result.citations[0]!.readingWarning).toBe(result.warnings?.[0]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings![0]).not.toContain("does not appear verbatim");
+    expect(review.mock.calls[0]![0].sources).toHaveLength(1);
+    expect(review.mock.calls[0]![0].answer).not.toContain("[2]");
+    const prompt = JSON.stringify(seen[0]);
+    expect(prompt).toContain("image_url");
+    expect(prompt).toContain("Automatic text extraction (OCR)");
+    expect(prompt).toContain("620 661-0097");
+    expect(prompt).not.toContain("[2] diagram.png");
+  });
   it("sends pixels even without text matches and retains an exact visual citation", async () => {
     const { store, source } = fixture();
     const visual = await new VisionLibrary(store).prepare(source);
